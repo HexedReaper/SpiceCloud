@@ -106,6 +106,18 @@ class SoundCloudPlayer {
     document.body.appendChild(this.audio);
     this.bindAudioEvents();
     this.injectStyles();
+    this.waitForSpicetify();
+  }
+
+  private waitForSpicetify(): void {
+    if (
+      typeof Spicetify === "undefined" ||
+      !Spicetify.Player ||
+      !Spicetify.Platform
+    ) {
+      setTimeout(() => this.waitForSpicetify(), 100);
+      return;
+    }
     this.hookSpotifyPlayer();
     this.hookSkipButtons();
     this.hookProgressBar();
