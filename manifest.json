@@ -1,5 +1,24 @@
 {
   "name": "SpiceCloud",
   "icon": "icon.svg",
-  "active-icon": "icon.svg"
+  "active-icon": "icon.svg",
+  "description": "SoundCloud inside Spotify — full playback, search integration, feed, liked tracks and playlists via a native Spicetify sidebar app.",
+  "preview": "https://raw.githubusercontent.com/5djr/SpiceCloud/master/preview.png",
+  "readme": "README.md",
+  "authors": [
+    {
+      "name": "Tym",
+      "url": "https://github.com/5djr"
+    }
+  ],
+  "tags": [
+    "soundcloud",
+    "player",
+    "search",
+    "music",
+    "streaming",
+    "integration",
+    "feed",
+    "playlists"
+  ]
 }

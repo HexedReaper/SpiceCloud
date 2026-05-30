@@ -15,6 +15,10 @@ import {
   initSearchIntegration,
   destroySearchIntegration,
 } from "../services/searchIntegration";
+import {
+  initSearchPageIntegration,
+  destroySearchPageIntegration,
+} from "../services/searchPageIntegration";
 
 const SETTINGS_KEY = "spicecloud:settings";
 
@@ -51,8 +55,13 @@ function boot(): void {
   // starts working the moment the user connects in the app — no tab click and
   // no Spotify restart required — and stops if they disconnect.
   const sync = () => {
-    if (hasCredentials()) initSearchIntegration();
-    else destroySearchIntegration();
+    if (hasCredentials()) {
+      initSearchIntegration();
+      initSearchPageIntegration();
+    } else {
+      destroySearchIntegration();
+      destroySearchPageIntegration();
+    }
   };
   sync();
   setInterval(sync, 2000);

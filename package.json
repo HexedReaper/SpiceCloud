@@ -1,6 +1,6 @@
 {
   "name": "spicecloud",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SoundCloud integration for Spotify via Spicetify — custom sidebar app with full playback",
   "scripts": {
     "build": "spicetify-creator",

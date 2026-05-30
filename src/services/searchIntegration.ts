@@ -114,28 +114,22 @@ function injectStyles(): void {
       border-radius: var(--encore-corner-radius-base, 4px);
     }
 
-    /* Play button circle — hidden until row is hovered */
+    /* Play button — hidden until row is hovered, plain icon like Spotify */
     .sc-si-play-btn {
       position: absolute;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%) scale(0.88);
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: #ff5500;
+      transform: translate(-50%, -50%);
       display: flex;
       align-items: center;
       justify-content: center;
       opacity: 0;
-      transition: opacity 0.15s, transform 0.15s;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      transition: opacity 0.15s;
       pointer-events: none;
       color: #fff;
     }
     .${CLS_ROW}:hover .sc-si-play-btn {
       opacity: 1;
-      transform: translate(-50%, -50%) scale(1);
     }
 
     .sc-si-meta {
@@ -306,7 +300,7 @@ async function doSearch(query: string): Promise<void> {
   } catch {
     _results = [];
   }
-  syncGrid();
+  if (!_destroyed) syncGrid();
 }
 
 // ── Input detection ───────────────────────────────────────────────────────────
@@ -344,6 +338,7 @@ function onCaptureFocus(e: FocusEvent): void {
 }
 
 function onCaptureKeydown(e: KeyboardEvent): void {
+  if (_destroyed) return;
   if (e.key === "Escape") {
     _results = [];
     syncGrid();
