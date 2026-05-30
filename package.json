@@ -5,13 +5,15 @@
   "scripts": {
     "build": "spicetify-creator",
     "watch": "spicetify-creator --watch",
-    "start": "spicetify-creator --start"
+    "start": "spicetify-creator --start",
+    "preview": "node -e \"const{Resvg}=require('@resvg/resvg-js'),fs=require('fs');const r=new Resvg(fs.readFileSync('preview.svg','utf8'),{fitTo:{mode:'width',value:800},font:{loadSystemFonts:true}});fs.writeFileSync('preview.png',r.render().asPng());console.log('preview.png written');\""
   },
   "devDependencies": {
-    "spicetify-creator": "^1.0.9",
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^18.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "spicetify-creator": "^1.0.9",
     "typescript": "^5.0.0"
   }
 }
