@@ -69,15 +69,15 @@ Source lives in `src/`. The entry point is `src/app.tsx`. `spicetify-creator` co
 
 ### Key files
 
-| File                                | Purpose                                                            |
-| ----------------------------------- | ------------------------------------------------------------------ |
-| `src/services/player.ts`            | SoundCloudPlayer singleton — audio, now-playing bar, Spotify hooks |
-| `src/services/api.ts`               | SoundCloud API v2 wrapper (`scFetch`)                              |
-| `src/services/auth.ts`              | OAuth + client_id extraction, LocalStorage persistence             |
-| `src/services/searchIntegration.ts`     | Injects SC results into Spotify's search dropdown                  |
+| File                                    | Purpose                                                              |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| `src/services/player.ts`                | SoundCloudPlayer singleton — audio, now-playing bar, Spotify hooks   |
+| `src/services/api.ts`                   | SoundCloud API v2 wrapper (`scFetch`)                                |
+| `src/services/auth.ts`                  | OAuth + client_id extraction, LocalStorage persistence               |
+| `src/services/searchIntegration.ts`     | Injects SC results into Spotify's search dropdown                    |
 | `src/services/searchPageIntegration.ts` | Injects a SoundCloud section into Spotify's full search results page |
-| `src/hooks/usePlayer.ts`            | React hook for player state                                        |
-| `src/hooks/useAuth.ts`              | React hook for auth state                                          |
+| `src/hooks/usePlayer.ts`                | React hook for player state                                          |
+| `src/hooks/useAuth.ts`                  | React hook for auth state                                            |
 
 ---
 

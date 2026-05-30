@@ -303,7 +303,11 @@ function onRouteChange(): void {
   // Attach inner observer to catch React re-renders of page content
   if (!_pageObs) {
     _pageObs = new MutationObserver(() => {
-      if (!_destroyed && !document.getElementById(SC_SECTION_ID) && _results.length > 0) {
+      if (
+        !_destroyed &&
+        !document.getElementById(SC_SECTION_ID) &&
+        _results.length > 0
+      ) {
         injectSection();
       }
     });
@@ -335,8 +339,11 @@ export function initSearchPageIntegration(): void {
   injectStyles();
 
   // Primary: hook Spicetify's SPA router so we hear every navigation immediately
-  const hist = (Spicetify as unknown as { Platform?: { History?: { listen?: (cb: () => void) => () => void } } })
-    ?.Platform?.History;
+  const hist = (
+    Spicetify as unknown as {
+      Platform?: { History?: { listen?: (cb: () => void) => () => void } };
+    }
+  )?.Platform?.History;
   if (hist?.listen) {
     _historyUnlisten = hist.listen(() => {
       // Give React a tick to render the new page before querying the DOM
@@ -364,8 +371,14 @@ export function destroySearchPageIntegration(): void {
   }
   _pageObs?.disconnect();
   _pageObs = null;
-  if (_searchDebounce !== null) { clearTimeout(_searchDebounce); _searchDebounce = null; }
-  if (_navDebounce !== null) { clearTimeout(_navDebounce); _navDebounce = null; }
+  if (_searchDebounce !== null) {
+    clearTimeout(_searchDebounce);
+    _searchDebounce = null;
+  }
+  if (_navDebounce !== null) {
+    clearTimeout(_navDebounce);
+    _navDebounce = null;
+  }
   document.getElementById(SC_SECTION_ID)?.remove();
   _results = [];
   _lastQuery = "";
