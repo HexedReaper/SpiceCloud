@@ -14,14 +14,18 @@ const CLS_ROW = "sc-si-row";
 let _results: SCTrack[] = [];
 let _debounce: ReturnType<typeof setTimeout> | null = null;
 let _inputEl: HTMLInputElement | null = null;
-let _bodyObs: MutationObserver | null = null;   // watches for dropdown appearing
-let _gridObs: MutationObserver | null = null;   // watches dropdown internals
+let _bodyObs: MutationObserver | null = null; // watches for dropdown appearing
+let _gridObs: MutationObserver | null = null; // watches dropdown internals
 let _destroyed = false;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function fmt(ms: number): string {
@@ -140,7 +144,9 @@ function injectStyles(): void {
 // ── Grid injection ────────────────────────────────────────────────────────────
 
 function clearScItems(grid: Element): void {
-  grid.querySelectorAll(`.${CLS_DIVIDER}, .${CLS_ROW}`).forEach((el) => el.remove());
+  grid
+    .querySelectorAll(`.${CLS_DIVIDER}, .${CLS_ROW}`)
+    .forEach((el) => el.remove());
 }
 
 function buildRow(track: SCTrack, idx: number): HTMLElement {
@@ -148,7 +154,10 @@ function buildRow(track: SCTrack, idx: number): HTMLElement {
   row.className = CLS_ROW;
   row.setAttribute("role", "row");
   row.setAttribute("tabindex", "0");
-  row.setAttribute("aria-label", `${track.title} – ${track.user.username} (SoundCloud)`);
+  row.setAttribute(
+    "aria-label",
+    `${track.title} – ${track.user.username} (SoundCloud)`,
+  );
 
   const art = track.artwork_url?.replace("-large", "-t50x50") ?? "";
   const artHtml = art
@@ -158,8 +167,8 @@ function buildRow(track: SCTrack, idx: number): HTMLElement {
   row.innerHTML =
     artHtml +
     `<div class="sc-si-meta">` +
-      `<span class="sc-si-title">${SC_SVG}${esc(track.title)}</span>` +
-      `<span class="sc-si-artist">${esc(track.user.username)}</span>` +
+    `<span class="sc-si-title">${SC_SVG}${esc(track.title)}</span>` +
+    `<span class="sc-si-artist">${esc(track.user.username)}</span>` +
     `</div>` +
     `<span class="sc-si-dur">${fmt(track.duration)}</span>`;
 
@@ -200,7 +209,7 @@ function addSpotifyBadges(grid: Element): void {
   grid
     .querySelectorAll<HTMLAnchorElement>(
       `[role="row"][draggable="true"] .e-10451-legacy-list-row__interactive ` +
-      `a[href*="/track/"]:not([data-sc-sp])`,
+        `a[href*="/track/"]:not([data-sc-sp])`,
     )
     .forEach((a) => {
       a.setAttribute("data-sc-sp", "1");
@@ -327,8 +336,10 @@ export function initSearchIntegration(): void {
 
 export function destroySearchIntegration(): void {
   _destroyed = true;
-  _bodyObs?.disconnect(); _bodyObs = null;
-  _gridObs?.disconnect(); _gridObs = null;
+  _bodyObs?.disconnect();
+  _bodyObs = null;
+  _gridObs?.disconnect();
+  _gridObs = null;
   if (_debounce !== null) clearTimeout(_debounce);
   document.removeEventListener("input", onCaptureInput, true);
   document.removeEventListener("focusin", onCaptureFocus, true);

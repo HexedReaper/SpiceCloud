@@ -8,9 +8,10 @@ labels: bug
 A clear description of what is broken.
 
 **Steps to reproduce**
-1. 
-2. 
-3. 
+
+1.
+2.
+3.
 
 **Expected behaviour**
 What you expected to happen.
@@ -19,6 +20,7 @@ What you expected to happen.
 What actually happened. Include any console errors from Spotify's DevTools (Ctrl+Shift+I).
 
 **Environment**
+
 - Spotify version:
 - Spicetify version (`spicetify -v`):
 - OS:

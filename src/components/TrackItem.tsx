@@ -50,7 +50,12 @@ export function TrackItem({ track, isActive, isPlaying, onPlay }: Props) {
                 <span />
               </>
             ) : (
-              <svg viewBox="0 0 10 12" fill="currentColor" width="10" height="12">
+              <svg
+                viewBox="0 0 10 12"
+                fill="currentColor"
+                width="10"
+                height="12"
+              >
                 <path d="M1 1.5L9 6 1 10.5V1.5Z" />
               </svg>
             )}

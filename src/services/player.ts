@@ -215,18 +215,26 @@ class SoundCloudPlayer {
       // 250ms timer or a Spicetify event.
       const hookVolumeInput = () => {
         const inp = q<HTMLInputElement>(SEL_VOLUME);
-        if (!inp || (inp as HTMLInputElement & { _scVol?: boolean })._scVol) return;
+        if (!inp || (inp as HTMLInputElement & { _scVol?: boolean })._scVol)
+          return;
         (inp as HTMLInputElement & { _scVol?: boolean })._scVol = true;
-        inp.addEventListener("input", () => { if (this._track) this.syncSpotifyVolume(); });
+        inp.addEventListener("input", () => {
+          if (this._track) this.syncSpotifyVolume();
+        });
         // Mirror the mute button so clicking mute also silences SC audio.
         const muteBtn = document.querySelector<HTMLButtonElement>(
           '[data-testid="volume-bar-toggle-mute-button"]',
         );
-        if (muteBtn && !(muteBtn as HTMLButtonElement & { _scMute?: boolean })._scMute) {
+        if (
+          muteBtn &&
+          !(muteBtn as HTMLButtonElement & { _scMute?: boolean })._scMute
+        ) {
           (muteBtn as HTMLButtonElement & { _scMute?: boolean })._scMute = true;
           muteBtn.addEventListener("click", () => {
             if (!this._track) return;
-            setTimeout(() => { this.audio.muted = !this.audio.muted; }, 50);
+            setTimeout(() => {
+              this.audio.muted = !this.audio.muted;
+            }, 50);
           });
         }
       };
@@ -331,26 +339,40 @@ class SoundCloudPlayer {
       const inp = q<HTMLInputElement>(SEL_PROGRESS);
       // The flag lives on the element. If Spotify re-renders and replaces the
       // DOM node, the new element has no flag → we re-hook it automatically.
-      if (!inp || (inp as HTMLInputElement & { _scSeek?: boolean })._scSeek) return;
+      if (!inp || (inp as HTMLInputElement & { _scSeek?: boolean })._scSeek)
+        return;
       (inp as HTMLInputElement & { _scSeek?: boolean })._scSeek = true;
 
-      const onStart = () => { if (this._track) this._isSeeking = true; };
+      const onStart = () => {
+        if (this._track) this._isSeeking = true;
+      };
       const onEnd = () => {
         if (!this._track || !this._isSeeking) return;
         this._isSeeking = false;
         const max = parseFloat(inp.max);
         const val = parseFloat(inp.value);
-        if (!isFinite(val) || !isFinite(this.audio.duration) || this.audio.duration <= 0)
+        if (
+          !isFinite(val) ||
+          !isFinite(this.audio.duration) ||
+          this.audio.duration <= 0
+        )
           return;
         let ratio: number;
-        if (isFinite(max) && max > 1000) ratio = val / 1000 / this.audio.duration;
+        if (isFinite(max) && max > 1000)
+          ratio = val / 1000 / this.audio.duration;
         else if (isFinite(max) && max > 1) ratio = val / max;
         else ratio = val;
         this.seek(Math.max(0, Math.min(1, ratio)));
       };
 
-      inp.addEventListener("mousedown", onStart, { capture: true, passive: true });
-      inp.addEventListener("touchstart", onStart, { capture: true, passive: true });
+      inp.addEventListener("mousedown", onStart, {
+        capture: true,
+        passive: true,
+      });
+      inp.addEventListener("touchstart", onStart, {
+        capture: true,
+        passive: true,
+      });
       inp.addEventListener("mouseup", onEnd, { capture: true });
       inp.addEventListener("touchend", onEnd, { capture: true });
     };
@@ -709,7 +731,7 @@ class SoundCloudPlayer {
     this._track = track;
     this._isLoading = true;
     this._error = null;
-    this.startTimer();  // keep Spotify muted during stream-URL resolution
+    this.startTimer(); // keep Spotify muted during stream-URL resolution
     this.emit();
 
     // Mute Spotify's audio immediately — belt-and-suspenders safety.

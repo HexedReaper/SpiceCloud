@@ -12,7 +12,7 @@
 - **Liked tracks** — your SoundCloud likes, in Spotify's UI
 - **Playlists** — your SoundCloud playlists
 - **Source badge** — orange SC badge in the corner when SoundCloud is playing
-- **Auto client\_id** — no manual API key setup; extracts the `client_id` automatically from SoundCloud's own bundles
+- **Auto client_id** — no manual API key setup; extracts the `client_id` automatically from SoundCloud's own bundles
 
 ---
 
@@ -68,14 +68,14 @@ Source lives in `src/`. The entry point is `src/app.tsx`. `spicetify-creator` co
 
 ### Key files
 
-| File | Purpose |
-|---|---|
-| `src/services/player.ts` | SoundCloudPlayer singleton — audio, now-playing bar, Spotify hooks |
-| `src/services/api.ts` | SoundCloud API v2 wrapper (`scFetch`) |
-| `src/services/auth.ts` | OAuth + client\_id extraction, LocalStorage persistence |
-| `src/services/searchIntegration.ts` | Injects SC results into Spotify's search dropdown |
-| `src/hooks/usePlayer.ts` | React hook for player state |
-| `src/hooks/useAuth.ts` | React hook for auth state |
+| File                                | Purpose                                                            |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| `src/services/player.ts`            | SoundCloudPlayer singleton — audio, now-playing bar, Spotify hooks |
+| `src/services/api.ts`               | SoundCloud API v2 wrapper (`scFetch`)                              |
+| `src/services/auth.ts`              | OAuth + client_id extraction, LocalStorage persistence             |
+| `src/services/searchIntegration.ts` | Injects SC results into Spotify's search dropdown                  |
+| `src/hooks/usePlayer.ts`            | React hook for player state                                        |
+| `src/hooks/useAuth.ts`              | React hook for auth state                                          |
 
 ---
 

@@ -42,7 +42,9 @@ export function LikedTracksView() {
     if (!nextHref || isLoadingMore) return;
     setIsLoadingMore(true);
     try {
-      const more = await fetchNextPage<{ track: SCTrack; created_at: string }>(nextHref);
+      const more = await fetchNextPage<{ track: SCTrack; created_at: string }>(
+        nextHref,
+      );
       const newTracks = (more.collection ?? [])
         .map((item) => item.track)
         .filter(Boolean) as SCTrack[];

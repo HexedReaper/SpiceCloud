@@ -235,7 +235,11 @@ export async function getMe(): Promise<{
   username: string;
   avatar_url: string;
 }> {
-  const me = await scFetch<{ id: number; username: string; avatar_url: string }>("/me");
+  const me = await scFetch<{
+    id: number;
+    username: string;
+    avatar_url: string;
+  }>("/me");
   _userId = me.id;
   return me;
 }
