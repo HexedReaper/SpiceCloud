@@ -8,7 +8,7 @@ import {
   SCTrack,
 } from "../types/soundcloud";
 import { fetchClientId, loadSettings, saveSettings } from "./auth";
-import { httpGet } from "./http";
+import { httpGet, httpRequest } from "./http";
 
 const API_BASE = "https://api-v2.soundcloud.com";
 
@@ -273,4 +273,188 @@ export async function getMe(): Promise<{
   }>("/me");
   _userId = me.id;
   return me;
+}
+
+// ── Like / Unlike ─────────────────────────────────────────────────────────────
+//
+// SoundCloud's mutation endpoints (PUT/DELETE track_likes) are guarded by
+// DataDome bot-protection.  When DataDome intercepts a request it returns
+// HTTP 403 with a JSON body like { "url": "https://geo.captcha-delivery.com/..." }.
+//
+// Strategy:
+//   1. Try Spicetify.CosmosAsync.put/del — routes through Spotify's main
+//      process, which is session-aware (shares Electron cookies).  If the
+//      user has already solved the CAPTCHA the datadome cookie for
+//      soundcloud.com travels with this request and it succeeds.
+//   2. If step 1 returns a DataDome 403, open the CAPTCHA URL in a popup
+//      window.  Electron shares one cookie store across all windows, so
+//      solving the challenge sets the datadome cookie for .soundcloud.com
+//      in the same session.  Then retry once via CosmosAsync — this time
+//      the main-process request carries the cookie.
+//   3. If CosmosAsync is unavailable, fall back to browser fetch via the
+//      Spicetify CORS proxy.  Apply the same CAPTCHA-popup logic on 403.
+
+function parseCaptchaUrl(body: unknown): string | null {
+  const check = (b: unknown): string | null => {
+    if (typeof b !== "object" || b === null) return null;
+    const url = (b as Record<string, unknown>)["url"];
+    return typeof url === "string" && url.includes("captcha-delivery.com")
+      ? url
+      : null;
+  };
+  if (typeof body === "string") {
+    try {
+      return check(JSON.parse(body));
+    } catch {
+      return null;
+    }
+  }
+  return check(body);
+}
+
+function openCaptchaAndWait(captchaUrl: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const popup = window.open(
+      captchaUrl,
+      "sc-datadome",
+      "width=620,height=520",
+    );
+    if (!popup) {
+      // Pop-up blocked — tell the user and give up; they will need to solve it
+      // manually before liking works.
+      Spicetify?.showNotification?.(
+        "SoundCloud requires a CAPTCHA. Open this URL in your browser to unblock likes: " +
+          captchaUrl,
+        true,
+      );
+      resolve();
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (popup.closed) {
+        clearInterval(timer);
+        resolve();
+      }
+    }, 500);
+    // Time-out after 2 minutes whether or not the user solved it.
+    window.setTimeout(() => {
+      clearInterval(timer);
+      try {
+        popup.close();
+      } catch {
+        // ignore
+      }
+      resolve();
+    }, 120_000);
+  });
+}
+
+async function scMutate(
+  method: "put" | "del",
+  endpoint: string,
+  attempt = 0,
+): Promise<void> {
+  const params: Record<string, string> = {
+    client_id: _settings.clientId,
+    ...SC_BASE_PARAMS,
+  };
+  if (_settings.oauthToken) params["oauth_token"] = _settings.oauthToken;
+
+  const urlObj = new URL(`${API_BASE}${endpoint}`);
+  Object.entries(params).forEach(([k, v]) => urlObj.searchParams.set(k, v));
+  const targetUrl = urlObj.toString();
+  const httpMethod = method === "put" ? "PUT" : "DELETE";
+
+  // ── 1. CosmosAsync (Spotify main-process, session-aware) ───────────────────
+  if (typeof Spicetify !== "undefined" && Spicetify.CosmosAsync) {
+    try {
+      const raw =
+        method === "put"
+          ? await Spicetify.CosmosAsync.put(targetUrl)
+          : await Spicetify.CosmosAsync.del(targetUrl);
+
+      // CosmosAsync may return a wrapped { status, body } object (older builds).
+      let status = 200;
+      let responseBody: unknown = raw;
+      if (
+        raw !== null &&
+        typeof raw === "object" &&
+        typeof (raw as Record<string, unknown>)["status"] === "number" &&
+        "body" in (raw as object)
+      ) {
+        status = (raw as { status: number }).status;
+        responseBody = (raw as { body: unknown }).body;
+      }
+
+      if (status < 400) return;
+
+      if (status === 403 && attempt === 0) {
+        const captchaUrl = parseCaptchaUrl(responseBody);
+        if (captchaUrl) {
+          await openCaptchaAndWait(captchaUrl);
+          return scMutate(method, endpoint, 1);
+        }
+      }
+      throw new Error(`CosmosAsync HTTP ${status} on ${endpoint}`);
+    } catch (err) {
+      if (attempt > 0) throw err;
+      console.warn(
+        "[SpiceCloud] CosmosAsync mutate failed, falling back to proxy:",
+        err,
+      );
+    }
+  }
+
+  // ── 2. Browser fetch via CORS proxy ────────────────────────────────────────
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (_settings.oauthToken)
+    headers["Authorization"] = `OAuth ${_settings.oauthToken}`;
+
+  const proxyUrl = `https://cors-proxy.spicetify.app/${targetUrl}`;
+  const res = await httpRequest(proxyUrl, httpMethod, headers);
+  if (res.ok) return;
+
+  const bodyText = await res.text().catch(() => "");
+
+  if (res.status === 403 && attempt === 0) {
+    const captchaUrl = parseCaptchaUrl(bodyText);
+    if (captchaUrl) {
+      await openCaptchaAndWait(captchaUrl);
+      return scMutate(method, endpoint, 1);
+    }
+  }
+
+  throw new Error(
+    `SoundCloud ${res.status} on ${httpMethod} ${endpoint}: ${bodyText.slice(0, 200)}`,
+  );
+}
+
+export async function likeTrack(trackId: number): Promise<void> {
+  const id = await ensureUserId();
+  await scMutate("put", `/users/${id}/track_likes/${trackId}`);
+}
+
+export async function unlikeTrack(trackId: number): Promise<void> {
+  const id = await ensureUserId();
+  await scMutate("del", `/users/${id}/track_likes/${trackId}`);
+}
+
+export async function getLikedTrackIds(): Promise<Set<number>> {
+  const userId = await ensureUserId();
+  const ids = new Set<number>();
+  // /track_likes/ids doesn't exist in the SC v2 API — paginate /track_likes instead.
+  let next: string | null = `/users/${userId}/track_likes`;
+  let extra: Record<string, string> = { limit: "200" };
+  while (next) {
+    const page = await scFetch<{
+      collection: Array<{ track: { id: number } }>;
+      next_href: string | null;
+    }>(next, extra);
+    extra = {};
+    for (const item of page.collection ?? []) {
+      if (item?.track?.id) ids.add(item.track.id);
+    }
+    next = page.next_href ?? null;
+  }
+  return ids;
 }

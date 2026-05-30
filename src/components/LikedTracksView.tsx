@@ -3,6 +3,7 @@ import { SCTrack } from "../types/soundcloud";
 import { fetchNextPage, getLikedTracks } from "../services/api";
 import { player } from "../services/player";
 import { usePlayer } from "../hooks/usePlayer";
+import { useLikedTracks } from "../hooks/useLikedTracks";
 import { TrackItem } from "./TrackItem";
 import { t } from "../i18n";
 
@@ -14,6 +15,7 @@ export function LikedTracksView() {
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const { track: activeTrack, isPlaying } = usePlayer();
+  const { likedIds, toggleLike } = useLikedTracks();
 
   useEffect(() => {
     setIsLoading(true);
@@ -69,6 +71,18 @@ export function LikedTracksView() {
     [tracks, activeTrack],
   );
 
+  // When unliking from this view, remove the track from the displayed list.
+  const handleLike = useCallback(
+    async (track: SCTrack) => {
+      const wasLiked = likedIds.has(track.id);
+      await toggleLike(track.id);
+      if (wasLiked) {
+        setTracks((prev) => prev.filter((t) => t.id !== track.id));
+      }
+    },
+    [likedIds, toggleLike],
+  );
+
   return (
     <div className="sc-view">
       <h2 className="sc-view__title">{t("view_liked")}</h2>
@@ -80,15 +94,17 @@ export function LikedTracksView() {
         </div>
       )}
       {error && (
-        <div>
+        <>
           <div className="sc-error">{error}</div>
-          <button
-            className="sc-retry-btn"
-            onClick={() => setRetryKey((k) => k + 1)}
-          >
-            Retry
-          </button>
-        </div>
+          <div className="sc-load-more">
+            <button
+              className="sc-retry-btn"
+              onClick={() => setRetryKey((k) => k + 1)}
+            >
+              Retry
+            </button>
+          </div>
+        </>
       )}
       {!isLoading && !error && tracks.length === 0 && (
         <p className="sc-empty">{t("empty_liked")}</p>
@@ -100,7 +116,9 @@ export function LikedTracksView() {
             track={track}
             isActive={activeTrack?.id === track.id}
             isPlaying={activeTrack?.id === track.id && isPlaying}
+            isLiked={likedIds.has(track.id)}
             onPlay={handlePlay}
+            onLike={(t) => void handleLike(t)}
           />
         ))}
       </div>

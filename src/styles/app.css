@@ -1,128 +1,109 @@
-/* ── Utility ───────────────────────────────────────────────────────────────── */
+/* ── Utility ─────────────────────────────────────────────────────────────────── */
 .sc-hidden {
   display: none !important;
 }
 
-/* ── Root ─────────────────────────────────────────────────────────────────── */
+/* ── Root ───────────────────────────────────────────────────────────────────── */
 .sc-app {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--spice-main, #121212);
-  color: var(--spice-text, #fff);
-  font-family: var(--font-family, "CircularSp", system-ui, sans-serif);
+  background: var(--background-base, var(--spice-main, #121212));
+  color: var(--text-base, var(--spice-text, #fff));
   font-size: 14px;
   overflow: clip;
   pointer-events: all;
+  font-family: inherit;
 }
 
-/* ── Header ────────────────────────────────────────────────────────────────── */
-.sc-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+/* ── Hero / Brand header ─────────────────────────────────────────────────────── */
+.sc-hero {
   flex-shrink: 0;
-  position: relative;
-  z-index: 10;
+  padding: 28px 20px 16px;
   pointer-events: all;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 85, 0, 0.2) 0%,
+    transparent 100%
+  );
 }
 
-.sc-header * {
-  pointer-events: auto;
-}
-
-.sc-header__logo {
+.sc-hero__brand {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 15px;
-  font-weight: 700;
-  color: #ff5500;
+  gap: 10px;
   user-select: none;
-  pointer-events: none;
-  letter-spacing: -0.01em;
 }
 
-.sc-header__logo-icon {
+.sc-hero__icon {
   display: block;
-  width: 20px;
-  height: 20px;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
 }
 
-.sc-header__logout {
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--spice-subtext, #999);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 5px 10px;
-  border-radius: 4px;
-  transition:
-    color 0.15s,
-    border-color 0.15s,
-    background 0.15s;
-  pointer-events: auto;
-  position: relative;
-  z-index: 11;
+.sc-hero__name {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-base, #fff);
+  line-height: 1;
 }
 
-.sc-header__logout:hover {
-  color: var(--spice-text, #fff);
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-/* ── Navigation tabs ──────────────────────────────────────────────────────── */
+/* ── Navigation tabs (pill style) ────────────────────────────────────────────── */
 .sc-nav {
   display: flex;
-  padding: 0 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  gap: 6px;
+  padding: 0 14px 14px;
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sc-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .sc-nav__tab {
-  flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
-  background: none;
+  gap: 5px;
+  background: var(--background-tinted-base, rgba(255, 255, 255, 0.07));
   border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--spice-subtext, #999);
+  border-radius: 99px;
+  color: var(--text-base, #fff);
   cursor: pointer;
-  padding: 9px 4px 7px;
-  font-size: 11px;
+  padding: 6px 13px;
+  font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
   transition:
-    color 0.15s,
-    border-color 0.15s;
+    background 0.15s,
+    color 0.15s;
   line-height: 1;
-  position: relative;
-  bottom: -1px; /* overlap the border-bottom of .sc-nav */
+  font-family: inherit;
+  flex-shrink: 0;
 }
 
 .sc-nav__tab:hover {
-  color: var(--spice-text, #fff);
+  background: var(--background-tinted-highlight, rgba(255, 255, 255, 0.14));
 }
 
 .sc-nav__tab--active {
-  color: #ff5500;
-  border-bottom-color: #ff5500;
+  background: var(--text-base, #fff);
+  color: var(--background-base, #000);
 }
 
 .sc-nav__icon {
-  font-size: 14px;
+  display: flex;
+  align-items: center;
 }
 
-/* ── Scrollable content ──────────────────────────────────────────────────── */
+/* ── Scrollable content ──────────────────────────────────────────────────────── */
 .sc-content {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 8px 12px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
@@ -138,100 +119,106 @@
   background: transparent;
 }
 
-/* ── View wrappers ───────────────────────────────────────────────────────── */
+/* ── View wrapper ────────────────────────────────────────────────────────────── */
 .sc-view {
-  padding: 10px 0;
+  padding: 8px 16px 24px;
 }
 
 .sc-view__title {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 700;
-  margin: 0 0 2px;
+  margin: 0 0 4px;
   letter-spacing: -0.02em;
 }
 
 .sc-view__subtitle {
-  font-size: 12px;
-  color: var(--spice-subtext, #999);
-  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-subdued, var(--spice-subtext, #b3b3b3));
+  margin: 0 0 16px;
 }
 
-/* ── Track list ──────────────────────────────────────────────────────────── */
+/* ── Track list ──────────────────────────────────────────────────────────────── */
 .sc-track-list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .sc-track {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px 6px 10px;
-  border-radius: 6px;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: var(--encore-corner-radius-larger, 6px);
   cursor: pointer;
   transition: background 0.12s;
   outline: none;
-  border-left: 3px solid transparent;
 }
 
 .sc-track:hover,
 .sc-track:focus-visible {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--background-tinted-highlight, rgba(255, 255, 255, 0.08));
 }
 
-.sc-track--active {
-  border-left-color: #ff5500;
-  background: rgba(255, 85, 0, 0.08);
+.sc-track--active .sc-track__title {
+  color: #ff5500;
 }
 
-.sc-track--active:hover {
-  background: rgba(255, 85, 0, 0.13);
-}
-
-/* Artwork */
+/* Artwork wrap + play overlay */
 .sc-track__art-wrap {
   position: relative;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: var(--encore-corner-radius-base, 4px);
   overflow: hidden;
 }
 
 .sc-track__art {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   object-fit: cover;
   display: block;
-  transition: filter 0.2s;
+  transition: filter 0.15s;
 }
 
+.sc-track:hover .sc-track__art,
 .sc-track--active .sc-track__art {
-  filter: brightness(0.6);
+  filter: brightness(0.55);
 }
 
+/* Hover play button (shown for non-active tracks on hover) */
+.sc-track__hover-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: #fff;
+}
+
+.sc-track:hover .sc-track__hover-play {
+  opacity: 1;
+}
+
+/* Active indicator (playing bars or pause icon) */
 .sc-track__indicator {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
   color: #ff5500;
-  font-weight: 700;
-  letter-spacing: 1px;
-  background: rgba(0, 0, 0, 0.3);
 }
 
-/* Animated bars when playing */
 .sc-track__indicator--playing {
-  display: flex;
   align-items: flex-end;
   justify-content: center;
   gap: 2px;
-  padding-bottom: 6px;
+  padding-bottom: 7px;
 }
 
 .sc-track__indicator--playing span {
@@ -268,7 +255,6 @@
 
 /* Track text info */
 .sc-track__info {
-  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -276,52 +262,84 @@
 }
 
 .sc-track__title {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--spice-text, #fff);
+  color: var(--text-base, #fff);
   line-height: 1.3;
 }
 
-.sc-track--active .sc-track__title {
-  color: #ff5500;
-}
-
 .sc-track__artist {
-  font-size: 11px;
-  color: var(--spice-subtext, #999);
+  font-size: 12px;
+  color: var(--text-subdued, var(--spice-subtext, #b3b3b3));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .sc-track__duration {
-  font-size: 11px;
-  color: var(--spice-subtext, #777);
+  font-size: 12px;
+  color: var(--text-subdued, var(--spice-subtext, #b3b3b3));
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Auth screen ──────────────────────────────────────────────────────────── */
+/* Like button — hidden until row is hovered (or already liked) */
+.sc-track__like-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-subdued, #999);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    transform 0.1s;
+}
+
+.sc-track:hover .sc-track__like-btn,
+.sc-track__like-btn--liked {
+  opacity: 1;
+}
+
+.sc-track__like-btn:hover {
+  color: var(--text-base, #fff);
+  transform: scale(1.12);
+}
+
+.sc-track__like-btn--liked {
+  color: #ff5500;
+}
+
+.sc-track__like-btn--liked:hover {
+  color: #ff7733;
+}
+
+/* ── Auth screen ─────────────────────────────────────────────────────────────── */
 .sc-auth {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 16px 20px;
-  gap: 18px;
+  padding: 32px 20px 24px;
+  gap: 20px;
 }
 
 .sc-auth__logo {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .sc-auth__title {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 800;
   color: #ff5500;
   margin: 0;
@@ -330,8 +348,9 @@
 
 .sc-auth__subtitle {
   font-size: 13px;
-  color: var(--spice-subtext, #999);
+  color: var(--text-subdued, #b3b3b3);
   margin: 0;
+  text-align: center;
 }
 
 .sc-auth__form {
@@ -345,12 +364,12 @@
   font-size: 13px;
   font-weight: 700;
   margin: 4px 0 8px;
-  color: var(--spice-text, #fff);
+  color: var(--text-base, #fff);
 }
 
 .sc-auth__steps {
   font-size: 12px;
-  color: var(--spice-subtext, #bbb);
+  color: var(--text-subdued, #b3b3b3);
   line-height: 1.9;
   padding-left: 16px;
   margin: 0 0 12px;
@@ -360,38 +379,39 @@
   margin-bottom: 1px;
 }
 .sc-auth__steps strong {
-  color: var(--spice-text, #fff);
+  color: var(--text-base, #fff);
 }
 
 .sc-auth__small {
   font-size: 11px;
-  color: var(--spice-subtext, #888);
+  color: var(--text-subdued, #888);
   margin: 0;
   line-height: 1.5;
 }
 
+/* ── Form controls ───────────────────────────────────────────────────────────── */
 .sc-label {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--spice-subtext, #999);
+  color: var(--text-subdued, #999);
 }
 
-/* ── Form controls ────────────────────────────────────────────────────────── */
 .sc-input {
   width: 100%;
-  padding: 9px 11px;
-  background: rgba(255, 255, 255, 0.06);
+  padding: 10px 12px;
+  background: var(--background-elevated-base, rgba(255, 255, 255, 0.06));
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  color: var(--spice-text, #fff);
+  border-radius: var(--encore-corner-radius-larger, 6px);
+  color: var(--text-base, #fff);
   font-size: 13px;
   box-sizing: border-box;
   outline: none;
   transition:
     border-color 0.15s,
     background 0.15s;
+  font-family: inherit;
 }
 
 .sc-input:focus {
@@ -408,31 +428,32 @@
 
 .sc-search-input {
   flex: 1;
-  padding: 9px 11px;
-  background: rgba(255, 255, 255, 0.06);
+  padding: 10px 16px;
+  background: var(--background-elevated-base, rgba(255, 255, 255, 0.07));
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 20px;
-  color: var(--spice-text, #fff);
-  font-size: 13px;
+  border-radius: 99px;
+  color: var(--text-base, #fff);
+  font-size: 14px;
   outline: none;
   transition:
     border-color 0.15s,
     background 0.15s;
+  font-family: inherit;
 }
 
 .sc-search-input:focus {
   border-color: #ff5500;
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.1);
 }
 
-/* ── Buttons ──────────────────────────────────────────────────────────────── */
+/* ── Buttons ─────────────────────────────────────────────────────────────────── */
 .sc-btn-primary {
   padding: 10px 22px;
   background: #ff5500;
   border: none;
-  border-radius: 20px;
+  border-radius: 99px;
   color: #fff;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
   width: 100%;
@@ -441,6 +462,7 @@
     transform 0.1s,
     box-shadow 0.15s;
   letter-spacing: 0.03em;
+  font-family: inherit;
 }
 
 .sc-btn-primary:hover:not(:disabled) {
@@ -456,13 +478,81 @@
 
 .sc-btn-primary--sm {
   width: auto;
-  padding: 8px 16px;
-  border-radius: 16px;
+  padding: 8px 18px;
+  font-size: 13px;
   flex-shrink: 0;
-  font-size: 12px;
 }
 
-/* ── Misc ─────────────────────────────────────────────────────────────────── */
+.sc-btn-secondary {
+  padding: 9px 14px;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--encore-corner-radius-larger, 6px);
+  color: var(--text-base, #fff);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+  font-family: inherit;
+}
+
+.sc-btn-secondary:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sc-btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sc-btn-icon {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--encore-corner-radius-larger, 6px);
+  color: var(--text-subdued, #999);
+  cursor: pointer;
+  padding: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+}
+
+.sc-btn-icon:hover {
+  color: var(--text-base, #fff);
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sc-btn-danger {
+  padding: 10px 22px;
+  background: transparent;
+  border: 1px solid rgba(241, 94, 108, 0.5);
+  border-radius: 99px;
+  color: var(--text-negative, #f15e6c);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+  font-family: inherit;
+}
+
+.sc-btn-danger:hover {
+  background: rgba(241, 94, 108, 0.1);
+  border-color: var(--text-negative, #f15e6c);
+}
+
+/* ── Misc ────────────────────────────────────────────────────────────────────── */
 .sc-link {
   color: #ff5500;
   text-decoration: none;
@@ -481,82 +571,44 @@
   background: rgba(255, 255, 255, 0.07);
 }
 
-.sc-code {
-  font-family: monospace;
-  font-size: 10px;
-  background: rgba(255, 255, 255, 0.09);
-  padding: 1px 4px;
-  border-radius: 3px;
-  color: #ff9966;
-}
-
 .sc-error {
-  background: rgba(255, 50, 50, 0.1);
-  border: 1px solid rgba(255, 50, 50, 0.3);
-  border-radius: 6px;
-  padding: 9px 12px;
+  background: rgba(241, 94, 108, 0.1);
+  border: 1px solid rgba(241, 94, 108, 0.3);
+  border-radius: var(--encore-corner-radius-larger, 6px);
+  padding: 10px 12px;
   font-size: 12px;
-  color: #ff6b6b;
+  color: var(--text-negative, #f15e6c);
   line-height: 1.5;
+  margin-bottom: 8px;
 }
 
 .sc-retry-btn {
-  margin-top: 8px;
-  padding: 6px 14px;
+  padding: 7px 16px;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 4px;
-  color: var(--spice-text, #fff);
-  font-size: 12px;
+  border-radius: 99px;
+  color: var(--text-base, #fff);
+  font-size: 13px;
   cursor: pointer;
   transition: background 0.12s;
+  font-family: inherit;
 }
 
 .sc-retry-btn:hover {
   background: rgba(255, 255, 255, 0.13);
 }
-
-/* Loading — animated bars */
-.sc-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 36px 16px;
-  color: transparent; /* hide text if any, use bars */
+.sc-retry-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-.sc-loading::before,
-.sc-loading::after,
-.sc-loading span {
-  /* We rely on JS rendering a real spinner instead; fall back to simple text */
-}
-
-/* Simple text loading fallback */
-.sc-loading-text {
-  text-align: center;
-  color: var(--spice-subtext, #999);
-  padding: 36px 16px;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-.sc-loading-text::after {
-  content: "";
-  display: inline-flex;
-  gap: 3px;
-}
-
-/* Spinner dots */
+/* ── Loading spinner ─────────────────────────────────────────────────────────── */
 .sc-spinner {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 36px 16px;
+  padding: 40px 16px;
 }
 
 .sc-spinner span {
@@ -590,57 +642,54 @@
   }
 }
 
-.sc-loading {
-  display: none;
-} /* hide original text loading */
-
 .sc-empty {
   text-align: center;
-  color: var(--spice-subtext, #777);
-  padding: 32px 16px;
-  font-size: 13px;
+  color: var(--text-subdued, #777);
+  padding: 40px 16px;
+  font-size: 14px;
   margin: 0;
 }
 
-/* ── Load more ───────────────────────────────────────────────────────────── */
+/* ── Load more ───────────────────────────────────────────────────────────────── */
 .sc-load-more {
   display: flex;
   justify-content: center;
-  padding: 12px 16px 20px;
+  padding: 16px 16px 24px;
 }
 
-/* ── Back button ─────────────────────────────────────────────────────────── */
+/* ── Back button ─────────────────────────────────────────────────────────────── */
 .sc-back-btn {
   background: none;
   border: none;
-  color: var(--spice-subtext, #999);
+  color: var(--text-subdued, #999);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   padding: 0;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   transition: color 0.12s;
+  font-family: inherit;
 }
 
 .sc-back-btn:hover {
-  color: var(--spice-text, #fff);
+  color: var(--text-base, #fff);
 }
 
-/* ── Playlist grid ───────────────────────────────────────────────────────── */
+/* ── Playlist grid ───────────────────────────────────────────────────────────── */
 .sc-playlist-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 12px;
   padding: 4px 0 8px;
 }
 
 .sc-playlist-card {
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: var(--encore-corner-radius-larger-2, 8px);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--background-elevated-base, rgba(255, 255, 255, 0.05));
   transition:
     background 0.15s,
     transform 0.12s,
@@ -652,7 +701,7 @@
 .sc-playlist-card:focus-visible {
   background: rgba(255, 255, 255, 0.1);
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .sc-playlist-card__art {
@@ -663,14 +712,14 @@
 }
 
 .sc-playlist-card__info {
-  padding: 7px 9px 9px;
+  padding: 8px 10px 10px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .sc-playlist-card__title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -679,11 +728,72 @@
 }
 
 .sc-playlist-card__count {
-  font-size: 10px;
-  color: var(--spice-subtext, #888);
+  font-size: 11px;
+  color: var(--text-subdued, #888);
 }
 
-/* ── Debug panel ──────────────────────────────────────────────────────────── */
+/* ── Settings page ───────────────────────────────────────────────────────────── */
+.sc-settings {
+  padding: 8px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sc-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 0;
+}
+
+.sc-settings__section-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-base, #fff);
+  letter-spacing: -0.01em;
+}
+
+.sc-settings__section-title--danger {
+  color: var(--text-negative, #f15e6c);
+}
+
+.sc-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sc-settings__hint {
+  font-size: 12px;
+  color: var(--text-subdued, #b3b3b3);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.sc-settings__input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sc-settings__input-row .sc-input {
+  flex: 1;
+}
+
+.sc-settings__msg {
+  font-size: 12px;
+  color: #ff5500;
+  margin: 0;
+}
+
+.sc-settings__divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Debug panel ─────────────────────────────────────────────────────────────── */
 .sc-debug {
   position: fixed;
   inset: 0;
@@ -720,7 +830,7 @@
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 4px;
-  color: var(--spice-text, #fff);
+  color: var(--text-base, #fff);
   cursor: pointer;
   font-size: 11px;
   padding: 3px 8px;
@@ -745,7 +855,7 @@
 
 .sc-debug__empty {
   padding: 24px;
-  color: var(--spice-subtext, #888);
+  color: var(--text-subdued, #888);
   text-align: center;
   font-size: 12px;
 }
@@ -780,14 +890,14 @@
 .sc-debug__entry-ep {
   display: block;
   font-size: 10px;
-  color: var(--spice-text, #fff);
+  color: var(--text-base, #fff);
   word-break: break-all;
   margin-bottom: 2px;
 }
 .sc-debug__entry-ts {
   display: block;
   font-size: 10px;
-  color: var(--spice-subtext, #666);
+  color: var(--text-subdued, #666);
 }
 
 .sc-debug__json-wrap {
@@ -820,25 +930,4 @@
   outline: none;
   white-space: pre;
   overflow: auto;
-}
-
-/* ── Debug toggle in header ───────────────────────────────────────────────── */
-.sc-header__debug {
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
-  color: var(--spice-subtext, #999);
-  cursor: pointer;
-  font-size: 11px;
-  padding: 5px 8px;
-  transition: all 0.12s;
-  pointer-events: auto;
-  position: relative;
-  z-index: 11;
-}
-.sc-header__debug:hover,
-.sc-header__debug--active {
-  background: rgba(255, 85, 0, 0.12);
-  border-color: rgba(255, 85, 0, 0.5);
-  color: #ff5500;
 }

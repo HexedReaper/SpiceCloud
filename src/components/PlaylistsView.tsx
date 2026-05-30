@@ -1,13 +1,14 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { SCPlaylist, SCTrack } from "../types/soundcloud";
 import { getPlaylist, getPlaylists } from "../services/api";
 import { player } from "../services/player";
 import { usePlayer } from "../hooks/usePlayer";
+import { useLikedTracks } from "../hooks/useLikedTracks";
 import { TrackItem } from "./TrackItem";
 import { t } from "../i18n";
 
 const FALLBACK_ART =
-  "https://a-v2.sndcdn.com/assets/images/sc-icons/favicon-2cadd14bdb.ico";
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44'%3E%3Crect width='44' height='44' fill='%23333'/%3E%3Ccircle cx='22' cy='22' r='8' fill='%23ff5500' opacity='.6'/%3E%3Ccircle cx='22' cy='22' r='3' fill='%23ff5500'/%3E%3C/svg%3E";
 
 export function PlaylistsView() {
   const [playlists, setPlaylists] = useState<SCPlaylist[]>([]);
@@ -15,7 +16,9 @@ export function PlaylistsView() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const openReqId = useRef(0);
   const { track: activeTrack, isPlaying } = usePlayer();
+  const { likedIds, toggleLike } = useLikedTracks();
 
   useEffect(() => {
     void (async () => {
@@ -33,15 +36,17 @@ export function PlaylistsView() {
   }, []);
 
   const openPlaylist = async (pl: SCPlaylist) => {
+    const reqId = ++openReqId.current;
     setIsLoadingDetail(true);
     try {
       const full = await getPlaylist(pl.id);
+      if (reqId !== openReqId.current) return; // stale — user clicked another playlist
       setDetail(full);
     } catch {
-      // If full fetch fails, show whatever tracks we already have.
+      if (reqId !== openReqId.current) return;
       setDetail(pl);
     } finally {
-      setIsLoadingDetail(false);
+      if (reqId === openReqId.current) setIsLoadingDetail(false);
     }
   };
 
@@ -60,7 +65,7 @@ export function PlaylistsView() {
     return (
       <div className="sc-view">
         <button className="sc-back-btn" onClick={() => setDetail(null)}>
-          {t("back")}
+          ← {t("back")}
         </button>
         <h2 className="sc-view__title">{detail.title}</h2>
         <p className="sc-view__subtitle">
@@ -74,7 +79,9 @@ export function PlaylistsView() {
               track={track}
               isActive={activeTrack?.id === track.id}
               isPlaying={activeTrack?.id === track.id && isPlaying}
+              isLiked={likedIds.has(track.id)}
               onPlay={handlePlay}
+              onLike={(t) => void toggleLike(t.id)}
             />
           ))}
         </div>
@@ -114,6 +121,9 @@ export function PlaylistsView() {
               }
               alt=""
               className="sc-playlist-card__art"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = FALLBACK_ART;
+              }}
             />
             <div className="sc-playlist-card__info">
               <span className="sc-playlist-card__title">{pl.title}</span>

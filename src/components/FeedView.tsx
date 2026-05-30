@@ -3,8 +3,18 @@ import { SCStreamItem, SCTrack } from "../types/soundcloud";
 import { fetchNextPage, getFeed } from "../services/api";
 import { player } from "../services/player";
 import { usePlayer } from "../hooks/usePlayer";
+import { useLikedTracks } from "../hooks/useLikedTracks";
 import { TrackItem } from "./TrackItem";
 import { t } from "../i18n";
+
+function extractTracks(items: SCStreamItem[]): SCTrack[] {
+  return items
+    .filter(
+      (item) =>
+        (item.type === "track" || item.type === "track-repost") && item.track,
+    )
+    .map((item) => item.track as SCTrack);
+}
 
 export function FeedView() {
   const [tracks, setTracks] = useState<SCTrack[]>([]);
@@ -14,6 +24,7 @@ export function FeedView() {
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const { track: activeTrack, isPlaying } = usePlayer();
+  const { likedIds, toggleLike } = useLikedTracks();
 
   useEffect(() => {
     setIsLoading(true);
@@ -22,10 +33,7 @@ export function FeedView() {
     void (async () => {
       try {
         const feed = await getFeed(30);
-        const extracted = (feed?.collection ?? [])
-          .filter((item) => item.type === "track" && item.track)
-          .map((item) => item.track as SCTrack);
-        setTracks(extracted);
+        setTracks(extractTracks(feed?.collection ?? []));
         setNextHref(feed?.next_href ?? null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load feed");
@@ -40,10 +48,7 @@ export function FeedView() {
     setIsLoadingMore(true);
     try {
       const more = await fetchNextPage<SCStreamItem>(nextHref);
-      const newTracks = (more.collection ?? [])
-        .filter((item) => item.type === "track" && item.track)
-        .map((item) => item.track as SCTrack);
-      setTracks((prev) => [...prev, ...newTracks]);
+      setTracks((prev) => [...prev, ...extractTracks(more.collection ?? [])]);
       setNextHref(more.next_href ?? null);
     } catch {
       // ignore — user can click again
@@ -75,15 +80,17 @@ export function FeedView() {
         </div>
       )}
       {error && (
-        <div>
+        <>
           <div className="sc-error">{error}</div>
-          <button
-            className="sc-retry-btn"
-            onClick={() => setRetryKey((k) => k + 1)}
-          >
-            Retry
-          </button>
-        </div>
+          <div className="sc-load-more">
+            <button
+              className="sc-retry-btn"
+              onClick={() => setRetryKey((k) => k + 1)}
+            >
+              Retry
+            </button>
+          </div>
+        </>
       )}
       {!isLoading && !error && tracks.length === 0 && (
         <p className="sc-empty">{t("empty_feed")}</p>
@@ -95,7 +102,9 @@ export function FeedView() {
             track={track}
             isActive={activeTrack?.id === track.id}
             isPlaying={activeTrack?.id === track.id && isPlaying}
+            isLiked={likedIds.has(track.id)}
             onPlay={handlePlay}
+            onLike={(t) => void toggleLike(t.id)}
           />
         ))}
       </div>

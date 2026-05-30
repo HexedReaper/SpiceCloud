@@ -44,6 +44,12 @@ const SPOTIFY_SVG_INLINE =
   `<path fill="#1DB954" d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>` +
   `</svg>`;
 
+// Play icon SVG used inside the hover overlay on artwork
+const PLAY_ICON_SVG =
+  `<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true">` +
+  `<path d="m7.05 3.606 13.49 7.788a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606"/>` +
+  `</svg>`;
+
 // ── CSS ───────────────────────────────────────────────────────────────────────
 
 function injectStyles(): void {
@@ -60,9 +66,8 @@ function injectStyles(): void {
 
     /*
      * Injected SC track rows — styled to match Spotify's own list rows using
-     * its Encore CSS variables (spacing / radius / colors / fonts), so the
-     * interleaved SoundCloud results are visually indistinguishable from
-     * Spotify's, apart from the orange SoundCloud logo before the title.
+     * its Encore CSS variables so the interleaved SoundCloud results are
+     * visually consistent with Spotify's, apart from the orange SoundCloud logo.
      */
     .${CLS_ROW} {
       display: flex;
@@ -75,19 +80,64 @@ function injectStyles(): void {
       cursor: pointer;
       user-select: none;
       color: var(--text-base, #fff);
-      font-family: var(--encore-body-font-stack, var(--font-family, system-ui, sans-serif));
+      font-family: var(--encore-body-font-stack, system-ui, sans-serif);
     }
     .${CLS_ROW}:hover, .${CLS_ROW}:focus-visible {
       background: var(--background-tinted-highlight, rgba(255,255,255,0.14));
       outline: none;
     }
-    .sc-si-art, .sc-si-art-blank {
-      width: 48px; height: 48px;
+
+    /* ── Artwork container with hover play button ── */
+    .sc-si-art-wrap {
+      position: relative;
+      width: 48px;
+      height: 48px;
       flex-shrink: 0;
       border-radius: var(--encore-corner-radius-base, 4px);
+      overflow: hidden;
     }
-    .sc-si-art { object-fit: cover; }
-    .sc-si-art-blank { background: var(--background-tinted-base, rgba(255,255,255,0.1)); }
+    .sc-si-art {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: filter 0.15s;
+    }
+    .${CLS_ROW}:hover .sc-si-art {
+      filter: brightness(0.55);
+    }
+    .sc-si-art-blank {
+      width: 48px;
+      height: 48px;
+      flex-shrink: 0;
+      background: var(--background-tinted-base, rgba(255,255,255,0.1));
+      border-radius: var(--encore-corner-radius-base, 4px);
+    }
+
+    /* Play button circle — hidden until row is hovered */
+    .sc-si-play-btn {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.88);
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #ff5500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.15s, transform 0.15s;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      pointer-events: none;
+      color: #fff;
+    }
+    .${CLS_ROW}:hover .sc-si-play-btn {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
     .sc-si-meta {
       flex: 1;
       min-width: 0;
@@ -128,11 +178,6 @@ function injectStyles(): void {
 }
 
 // ── SoundCloud rows (mixed into Spotify's results) ──────────────────────────
-//
-// SoundCloud tracks are interleaved among Spotify's track rows inside the SAME
-// results grid, each tagged with the SoundCloud logo. Per the DOM safety rules
-// we only insert OUR OWN nodes (never move/remove Spotify's), and the observer
-// re-injects them whenever React wipes the grid.
 
 function clearScRows(root: ParentNode): void {
   root.querySelectorAll(`.${CLS_ROW}`).forEach((el) => el.remove());
@@ -149,8 +194,13 @@ function buildRow(track: SCTrack, idx: number): HTMLElement {
   );
 
   const art = track.artwork_url?.replace("-large", "-t50x50") ?? "";
+  // Artwork wrapped in a container so the play-button overlay can be positioned
+  // absolutely over it, matching Spotify's own hover behaviour on album art.
   const artHtml = art
-    ? `<img class="sc-si-art" src="${esc(art)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+    ? `<div class="sc-si-art-wrap">` +
+      `<img class="sc-si-art" src="${esc(art)}" alt="" loading="lazy" onerror="this.style.display='none'">` +
+      `<div class="sc-si-play-btn">${PLAY_ICON_SVG}</div>` +
+      `</div>`
     : `<div class="sc-si-art-blank"></div>`;
 
   row.innerHTML =
@@ -177,11 +227,6 @@ function buildRow(track: SCTrack, idx: number): HTMLElement {
   return row;
 }
 
-// Fill the section's list with the current results. A signature guard prevents
-// re-rendering (and losing hover/focus) when nothing actually changed.
-// (Re)build the SC rows, interleaved 1:1 after each Spotify TRACK row (the
-// draggable ones — not the query suggestions at the top). Any SC rows beyond
-// the number of Spotify track rows are appended at the end, in order.
 function interleaveRows(grid: Element): void {
   clearScRows(grid);
   if (_results.length === 0) return;
@@ -195,11 +240,7 @@ function interleaveRows(grid: Element): void {
   });
 }
 
-// Inject Spotify logo into native Spotify track title links.
-// Uses data-sc-sp attribute as an idempotency marker — links already processed
-// are skipped, so repeated calls (on every observer tick) are cheap.
-// When Spotify re-renders a row it creates a fresh <a> without the attribute,
-// so the badge is re-injected on the very next observer callback.
+// Inject Spotify logo into native Spotify track title links (idempotent via data-sc-sp).
 function addSpotifyBadges(grid: Element): void {
   grid
     .querySelectorAll<HTMLAnchorElement>(
@@ -214,18 +255,12 @@ function addSpotifyBadges(grid: Element): void {
     });
 }
 
-// Re-inject if our items are missing or stale — called from the grid observer.
-// The count-match check breaks the mutation→inject→mutation loop:
-// after we inject N rows, the observer fires again but count matches → skip.
-// addSpotifyBadges always runs (it's idempotent via data-sc-sp).
 function syncGrid(): void {
   const grid = document.querySelector(`${SEL_DROPDOWN} ${SEL_GRID}`);
   if (!grid) return;
   if (_results.length === 0) {
     clearScRows(grid);
   } else {
-    // Rebuild only when our row count is off (Spotify wiped/re-rendered them).
-    // The count match also breaks the mutation→inject→mutation observer loop.
     const have = grid.querySelectorAll(`.${CLS_ROW}`).length;
     if (have !== _results.length) interleaveRows(grid);
   }
@@ -240,7 +275,6 @@ function attachGridObserver(): void {
 
   _gridObs?.disconnect();
   _gridObs = new MutationObserver(() => {
-    // Skip mutations caused by our own injections (count will already match).
     syncGrid();
   });
   _gridObs.observe(dropdown, { childList: true, subtree: true });
@@ -249,11 +283,9 @@ function attachGridObserver(): void {
 function onBodyMutation(): void {
   const dropdown = document.querySelector(SEL_DROPDOWN);
   if (dropdown) {
-    // Dropdown just appeared (or we hadn't attached yet).
     if (!_gridObs) attachGridObserver();
     syncGrid();
   } else {
-    // Dropdown closed — tear down grid observer.
     _gridObs?.disconnect();
     _gridObs = null;
     _results = [];
@@ -278,24 +310,19 @@ async function doSearch(query: string): Promise<void> {
 }
 
 // ── Input detection ───────────────────────────────────────────────────────────
-// Use document-level capture (focusin + input) so we catch the input regardless
-// of when Spotify renders it.  The exact class / data-attribute is now confirmed.
 
 function isSearchInput(el: EventTarget | null): el is HTMLInputElement {
   if (!(el instanceof HTMLInputElement)) return false;
   if (el.closest(".sc-app, .sc-auth, #sc-search-overlay")) return false;
   const aria = (el.getAttribute("aria-label") || "").toLowerCase();
   return (
-    // Strongest signal: the combobox input that owns the autocomplete listbox.
     el.getAttribute("aria-controls") === "search-dropdown" ||
     el.getAttribute("aria-owns") === "search-dropdown" ||
     el.getAttribute("data-top-bar-search") === "true" ||
     el.getAttribute("data-testid") === "search-input" ||
     el.classList.contains("main-topBar-searchBar") ||
-    // role=combobox covers the search field whether its type is search OR text.
     (el.getAttribute("role") === "combobox" &&
       (el.type === "search" || el.type === "text")) ||
-    // Last resort: aria-label in any supported language ("Search", "Suchen"…).
     /search|such|recher|busca|cerca|ricerca|szuka|搜索|検索/.test(aria)
   );
 }
@@ -303,8 +330,6 @@ function isSearchInput(el: EventTarget | null): el is HTMLInputElement {
 function onCaptureInput(e: Event): void {
   if (_destroyed || !isSearchInput(e.target)) return;
   _inputEl = e.target as HTMLInputElement;
-  // Make sure the dropdown observer is live so our section survives re-renders,
-  // even if the dropdown mounted before init or deeper than the body observer.
   attachGridObserver();
   const q = _inputEl.value;
   if (_debounce !== null) clearTimeout(_debounce);
@@ -314,8 +339,6 @@ function onCaptureInput(e: Event): void {
 function onCaptureFocus(e: FocusEvent): void {
   if (_destroyed || !isSearchInput(e.target)) return;
   _inputEl = e.target as HTMLInputElement;
-  // Attach grid observer as soon as the input is focused (dropdown may already
-  // be open from a previous query).
   attachGridObserver();
   syncGrid();
 }
@@ -329,17 +352,14 @@ function onCaptureKeydown(e: KeyboardEvent): void {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-// Window flag so the app bundle and the startup-extension bundle (separate
-// esbuild outputs, each with its own module state) can't both attach observers.
 const _scWin = window as unknown as { __scSearchInited?: boolean };
 
 export function initSearchIntegration(): void {
-  if (_bodyObs || _scWin.__scSearchInited) return; // already running anywhere
+  if (_bodyObs || _scWin.__scSearchInited) return;
   _scWin.__scSearchInited = true;
   _destroyed = false;
   injectStyles();
 
-  // Watch for #search-dropdown appearing/disappearing.
   _bodyObs = new MutationObserver(onBodyMutation);
   _bodyObs.observe(document.body, { childList: true, subtree: false });
 
@@ -349,7 +369,7 @@ export function initSearchIntegration(): void {
 }
 
 export function destroySearchIntegration(): void {
-  if (!_bodyObs && !_scWin.__scSearchInited) return; // nothing to tear down
+  if (!_bodyObs && !_scWin.__scSearchInited) return;
   _scWin.__scSearchInited = false;
   _destroyed = true;
   _bodyObs?.disconnect();

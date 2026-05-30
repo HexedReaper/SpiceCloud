@@ -3,6 +3,7 @@ import { SCTrack } from "../types/soundcloud";
 import { fetchNextPage, searchTracks } from "../services/api";
 import { player } from "../services/player";
 import { usePlayer } from "../hooks/usePlayer";
+import { useLikedTracks } from "../hooks/useLikedTracks";
 import { TrackItem } from "./TrackItem";
 import { t } from "../i18n";
 
@@ -13,7 +14,9 @@ export function SearchView() {
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
   const { track: activeTrack, isPlaying } = usePlayer();
+  const { likedIds, toggleLike } = useLikedTracks();
 
   const doSearch = useCallback(
     async (e?: React.FormEvent) => {
@@ -24,6 +27,7 @@ export function SearchView() {
       setIsSearching(true);
       setError(null);
       setNextHref(null);
+      setHasSearched(true);
 
       try {
         const data = await searchTracks(q, 30);
@@ -93,13 +97,17 @@ export function SearchView() {
             track={track}
             isActive={activeTrack?.id === track.id}
             isPlaying={activeTrack?.id === track.id && isPlaying}
+            isLiked={likedIds.has(track.id)}
             onPlay={handlePlay}
+            onLike={(t) => void toggleLike(t.id)}
           />
         ))}
-        {!isSearching && results.length === 0 && query.trim() && (
-          <p className="sc-empty">{t("no_results", query)}</p>
-        )}
+        {!isSearching &&
+          hasSearched &&
+          results.length === 0 &&
+          query.trim() && <p className="sc-empty">{t("no_results", query)}</p>}
       </div>
+
       {nextHref && !error && (
         <div className="sc-load-more">
           <button
