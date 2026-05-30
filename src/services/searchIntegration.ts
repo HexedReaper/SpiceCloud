@@ -3,10 +3,8 @@ import { player } from "./player";
 import { SCTrack } from "../types/soundcloud";
 
 // Exact selectors from Spotify's live DOM.
-const SEL_INPUT = '[data-top-bar-search="true"]';
 const SEL_DROPDOWN = "#search-dropdown";
 const SEL_GRID = 'ul[role="grid"]';
-const CLS_DIVIDER = "sc-si-divider";
 const CLS_ROW = "sc-si-row";
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -60,99 +58,90 @@ function injectStyles(): void {
       gap: 5px;
     }
 
-    /* ── SC divider ────────────────────────────────────────────────────────── */
-    .${CLS_DIVIDER} {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      padding: 10px 8px 5px;
-      color: #ff5500;
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      font-family: var(--font-family, system-ui, sans-serif);
-      border-top: 1px solid rgba(255,255,255,0.07);
-      margin-top: 4px;
-      pointer-events: none;
-    }
-
-    /* ── Injected SC track rows ─────────────────────────────────────────────── */
+    /*
+     * Injected SC track rows — styled to match Spotify's own list rows using
+     * its Encore CSS variables (spacing / radius / colors / fonts), so the
+     * interleaved SoundCloud results are visually indistinguishable from
+     * Spotify's, apart from the orange SoundCloud logo before the title.
+     */
     .${CLS_ROW} {
       display: flex;
       align-items: center;
-      gap: 0;
-      padding: var(--encore-spacing-tighter-4, 6px) var(--encore-spacing-tighter, 8px);
+      gap: var(--encore-spacing-tighter, 12px);
+      padding-block: var(--encore-spacing-tighter-4, 4px);
+      padding-inline: var(--encore-spacing-tighter-2, 8px) var(--encore-spacing-tighter-4, 4px);
+      min-block-size: var(--encore-control-size-smaller, 32px);
+      border-radius: var(--encore-corner-radius-larger, 6px);
       cursor: pointer;
-      border-radius: 4px;
-      min-height: var(--encore-control-size-smaller, 48px);
-      font-family: var(--font-family, system-ui, sans-serif);
+      user-select: none;
+      color: var(--text-base, #fff);
+      font-family: var(--encore-body-font-stack, var(--font-family, system-ui, sans-serif));
     }
-    .${CLS_ROW}:hover, .${CLS_ROW}:focus {
-      background: var(--background-tinted-highlight, rgba(255,255,255,0.08));
+    .${CLS_ROW}:hover, .${CLS_ROW}:focus-visible {
+      background: var(--background-tinted-highlight, rgba(255,255,255,0.14));
       outline: none;
     }
-    .sc-si-art {
+    .sc-si-art, .sc-si-art-blank {
       width: 48px; height: 48px;
-      border-radius: 3px;
-      object-fit: cover;
       flex-shrink: 0;
-      margin-right: 10px;
+      border-radius: var(--encore-corner-radius-base, 4px);
     }
-    .sc-si-art-blank {
-      width: 48px; height: 48px;
-      border-radius: 3px;
-      background: #333;
-      flex-shrink: 0;
-      margin-right: 10px;
-    }
+    .sc-si-art { object-fit: cover; }
+    .sc-si-art-blank { background: var(--background-tinted-base, rgba(255,255,255,0.1)); }
     .sc-si-meta {
       flex: 1;
       min-width: 0;
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: var(--encore-spacing-tighter-5, 2px);
     }
     .sc-si-title {
-      display: inline-flex;
+      display: flex;
       align-items: center;
       gap: 5px;
       color: var(--text-base, #fff);
-      font-size: 14px;
+      font-size: var(--encore-text-size-smaller, 0.875rem);
       font-weight: 400;
+      line-height: 1.4;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       max-width: 100%;
     }
+    .sc-si-title svg { flex-shrink: 0; color: #ff5500; }
     .sc-si-artist {
-      color: var(--text-subdued, rgba(255,255,255,0.5));
-      font-size: 12px;
+      color: var(--text-subdued, #b3b3b3);
+      font-size: var(--encore-text-size-smaller-2, 0.75rem);
+      line-height: 1.4;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .sc-si-dur {
       flex-shrink: 0;
-      color: var(--text-subdued, rgba(255,255,255,0.35));
-      font-size: 12px;
-      margin-left: 8px;
+      color: var(--text-subdued, #b3b3b3);
+      font-size: var(--encore-text-size-smaller-2, 0.75rem);
+      margin-left: var(--encore-spacing-tighter-2, 8px);
     }
   `;
   document.head.appendChild(s);
 }
 
-// ── Grid injection ────────────────────────────────────────────────────────────
+// ── SoundCloud rows (mixed into Spotify's results) ──────────────────────────
+//
+// SoundCloud tracks are interleaved among Spotify's track rows inside the SAME
+// results grid, each tagged with the SoundCloud logo. Per the DOM safety rules
+// we only insert OUR OWN nodes (never move/remove Spotify's), and the observer
+// re-injects them whenever React wipes the grid.
 
-function clearScItems(grid: Element): void {
-  grid
-    .querySelectorAll(`.${CLS_DIVIDER}, .${CLS_ROW}`)
-    .forEach((el) => el.remove());
+function clearScRows(root: ParentNode): void {
+  root.querySelectorAll(`.${CLS_ROW}`).forEach((el) => el.remove());
 }
 
 function buildRow(track: SCTrack, idx: number): HTMLElement {
   const row = document.createElement("div");
   row.className = CLS_ROW;
-  row.setAttribute("role", "row");
+  row.setAttribute("role", "button");
   row.setAttribute("tabindex", "0");
   row.setAttribute(
     "aria-label",
@@ -188,16 +177,22 @@ function buildRow(track: SCTrack, idx: number): HTMLElement {
   return row;
 }
 
-function injectIntoGrid(grid: Element): void {
-  clearScItems(grid);
+// Fill the section's list with the current results. A signature guard prevents
+// re-rendering (and losing hover/focus) when nothing actually changed.
+// (Re)build the SC rows, interleaved 1:1 after each Spotify TRACK row (the
+// draggable ones — not the query suggestions at the top). Any SC rows beyond
+// the number of Spotify track rows are appended at the end, in order.
+function interleaveRows(grid: Element): void {
+  clearScRows(grid);
   if (_results.length === 0) return;
-
-  const divider = document.createElement("div");
-  divider.className = CLS_DIVIDER;
-  divider.innerHTML = `${SC_SVG} SoundCloud`;
-  grid.appendChild(divider);
-
-  _results.forEach((t, i) => grid.appendChild(buildRow(t, i)));
+  const spotifyRows = Array.from(
+    grid.querySelectorAll(':scope > [role="row"][draggable="true"]'),
+  );
+  _results.forEach((track, i) => {
+    const row = buildRow(track, i);
+    const anchor = spotifyRows[i];
+    grid.insertBefore(row, anchor ? anchor.nextSibling : null);
+  });
 }
 
 // Inject Spotify logo into native Spotify track title links.
@@ -227,10 +222,12 @@ function syncGrid(): void {
   const grid = document.querySelector(`${SEL_DROPDOWN} ${SEL_GRID}`);
   if (!grid) return;
   if (_results.length === 0) {
-    clearScItems(grid);
+    clearScRows(grid);
   } else {
+    // Rebuild only when our row count is off (Spotify wiped/re-rendered them).
+    // The count match also breaks the mutation→inject→mutation observer loop.
     const have = grid.querySelectorAll(`.${CLS_ROW}`).length;
-    if (have !== _results.length) injectIntoGrid(grid);
+    if (have !== _results.length) interleaveRows(grid);
   }
   addSpotifyBadges(grid);
 }
@@ -287,16 +284,28 @@ async function doSearch(query: string): Promise<void> {
 function isSearchInput(el: EventTarget | null): el is HTMLInputElement {
   if (!(el instanceof HTMLInputElement)) return false;
   if (el.closest(".sc-app, .sc-auth, #sc-search-overlay")) return false;
+  const aria = (el.getAttribute("aria-label") || "").toLowerCase();
   return (
+    // Strongest signal: the combobox input that owns the autocomplete listbox.
+    el.getAttribute("aria-controls") === "search-dropdown" ||
+    el.getAttribute("aria-owns") === "search-dropdown" ||
     el.getAttribute("data-top-bar-search") === "true" ||
+    el.getAttribute("data-testid") === "search-input" ||
     el.classList.contains("main-topBar-searchBar") ||
-    (el.getAttribute("role") === "combobox" && el.type === "search")
+    // role=combobox covers the search field whether its type is search OR text.
+    (el.getAttribute("role") === "combobox" &&
+      (el.type === "search" || el.type === "text")) ||
+    // Last resort: aria-label in any supported language ("Search", "Suchen"…).
+    /search|such|recher|busca|cerca|ricerca|szuka|搜索|検索/.test(aria)
   );
 }
 
 function onCaptureInput(e: Event): void {
   if (_destroyed || !isSearchInput(e.target)) return;
   _inputEl = e.target as HTMLInputElement;
+  // Make sure the dropdown observer is live so our section survives re-renders,
+  // even if the dropdown mounted before init or deeper than the body observer.
+  attachGridObserver();
   const q = _inputEl.value;
   if (_debounce !== null) clearTimeout(_debounce);
   _debounce = setTimeout(() => void doSearch(q), 350);
@@ -320,8 +329,13 @@ function onCaptureKeydown(e: KeyboardEvent): void {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+// Window flag so the app bundle and the startup-extension bundle (separate
+// esbuild outputs, each with its own module state) can't both attach observers.
+const _scWin = window as unknown as { __scSearchInited?: boolean };
+
 export function initSearchIntegration(): void {
-  if (_bodyObs) return; // already running — prevents double-init from module boot + React mount
+  if (_bodyObs || _scWin.__scSearchInited) return; // already running anywhere
+  _scWin.__scSearchInited = true;
   _destroyed = false;
   injectStyles();
 
@@ -335,6 +349,8 @@ export function initSearchIntegration(): void {
 }
 
 export function destroySearchIntegration(): void {
+  if (!_bodyObs && !_scWin.__scSearchInited) return; // nothing to tear down
+  _scWin.__scSearchInited = false;
   _destroyed = true;
   _bodyObs?.disconnect();
   _bodyObs = null;
@@ -344,6 +360,7 @@ export function destroySearchIntegration(): void {
   document.removeEventListener("input", onCaptureInput, true);
   document.removeEventListener("focusin", onCaptureFocus, true);
   document.removeEventListener("keydown", onCaptureKeydown, true);
+  clearScRows(document);
   _results = [];
   _inputEl = null;
 }

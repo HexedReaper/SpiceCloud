@@ -33,6 +33,8 @@ export interface SCTrack {
   media?: {
     transcodings: SCTranscoding[];
   };
+  /** Token required to resolve transcoding stream URLs (progressive/HLS). */
+  track_authorization?: string;
 }
 
 export interface SCPlaylist {

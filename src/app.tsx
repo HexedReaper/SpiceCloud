@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import "./styles/app.css";
 
 import { useAuth } from "./hooks/useAuth";
@@ -7,45 +7,15 @@ import { Navigation, NavTab } from "./components/Navigation";
 import { FeedView } from "./components/FeedView";
 import { LikedTracksView } from "./components/LikedTracksView";
 import { PlaylistsView } from "./components/PlaylistsView";
-import {
-  initSearchIntegration,
-  destroySearchIntegration,
-} from "./services/searchIntegration";
 import { t } from "./i18n";
 
-// Boot search integration as soon as Spicetify is ready — does not require
-// the user to click the SpiceCloud tab first. initSearchIntegration is
-// idempotent (guard inside), so the React useEffect below is safe to call it
-// again after auth changes.
-(function boot() {
-  if (
-    typeof Spicetify === "undefined" ||
-    !Spicetify.Player ||
-    !Spicetify.LocalStorage
-  ) {
-    setTimeout(boot, 100);
-    return;
-  }
-  try {
-    const raw = Spicetify.LocalStorage.get("spicecloud:settings");
-    if (!raw) return;
-    const { clientId, oauthToken } = JSON.parse(raw) as {
-      clientId?: string;
-      oauthToken?: string;
-    };
-    if (clientId && oauthToken) initSearchIntegration();
-  } catch {}
-})();
+// NOTE: the player hooks and the SoundCloud search integration are booted at
+// Spotify startup by the extension (src/extensions/extension.tsx), not here, so
+// they work without first opening this tab. This component only renders the page.
 
 export default function App() {
   const { isAuthed, isConnecting, error, connect, disconnect } = useAuth();
   const [activeTab, setActiveTab] = useState<NavTab>("feed");
-
-  useEffect(() => {
-    if (!isAuthed) return;
-    initSearchIntegration();
-    return () => destroySearchIntegration();
-  }, [isAuthed]);
 
   if (!isAuthed) {
     return (

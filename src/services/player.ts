@@ -59,6 +59,11 @@ const SEL_SKIP_BCK = [
   '[data-testid="control-button-skip-back"]',
   'button[aria-label*="Previous" i]',
 ];
+const SEL_PLAYPAUSE = ['[data-testid="control-button-playpause"]'];
+const SEL_PROGRESS_WRAP = [
+  '[data-testid="playback-progressbar"]',
+  ".playback-progressbar",
+];
 
 function q<T extends Element = Element>(sels: string[]): T | null {
   for (const s of sels) {
@@ -96,12 +101,27 @@ class SoundCloudPlayer {
   private progressTimer: ReturnType<typeof setInterval> | null = null;
   // Reset by songchange to ensure any lingering echo is not acted on.
   private _selfPausingSpotify = false;
+  // Set right before we call Spicetify.Player.pause() ourselves so the
+  // resulting onplaypause echo isn't mistaken for a user/media-key toggle.
+  private _ignoreNextPlayPause = false;
   private _sourceBadge: HTMLElement | null = null;
   private _tryHookSkipButtons: (() => void) | null = null;
   private _tryHookProgressBar: (() => void) | null = null;
   // Seek guard — when user is dragging the progress bar we must not overwrite
   // the range input's value or the thumb snaps back every 250 ms.
   private _isSeeking = false;
+  // Live reference to the progress-bar wrapper + a one-time flag for the
+  // document-level pointer-up listener that ends a seek (see hookProgressBar).
+  private _progressWrap: HTMLElement | null = null;
+  private _seekDocBound = false;
+  // Our own progress bar, overlaid on Spotify's (whose fill/thumb/hover-tooltip
+  // are bound to Spotify's own paused track length and so can't reflect the SC
+  // track). Fully driven by SC position — see ensureProgressOverlay().
+  private _progressOverlay: HTMLElement | null = null;
+  // Always-on interval that keeps the source badge in sync with whatever is
+  // actually playing (SoundCloud vs Spotify), even when no SC track is loaded
+  // and the 250 ms SC timer isn't running.
+  private badgeTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.audio = document.createElement("audio");
@@ -124,6 +144,12 @@ class SoundCloudPlayer {
     this.hookSpotifyPlayer();
     this.hookSkipButtons();
     this.hookProgressBar();
+    // Keep the source badge live even when Spotify (not SC) is the active
+    // source — Spotify's own play/songchange don't always reach our handlers.
+    if (this.badgeTimer === null) {
+      this.badgeTimer = setInterval(() => this.refreshSourceBadge(), 800);
+    }
+    this.refreshSourceBadge();
   }
 
   // ── Audio events ──────────────────────────────────────────────────────────
@@ -141,15 +167,11 @@ class SoundCloudPlayer {
       // stopTimer() is called only when _track is cleared (songchange / destroy).
       this.emit();
     });
-    this.audio.addEventListener("play", () => {
-      if (this._track) this.updateSourceBadge("soundcloud");
-    });
-    this.audio.addEventListener("pause", () => {
-      if (!this._isLoading) this.updateSourceBadge(null);
-    });
+    this.audio.addEventListener("play", () => this.refreshSourceBadge());
+    this.audio.addEventListener("pause", () => this.refreshSourceBadge());
     this.audio.addEventListener("ended", () => {
-      this.updateSourceBadge(null);
       void this.next();
+      this.refreshSourceBadge();
     });
     this.audio.addEventListener("loadedmetadata", () => this.emit());
     this.audio.addEventListener("volumechange", () => this.emit());
@@ -169,9 +191,37 @@ class SoundCloudPlayer {
   private muteSpotifyAudio(muted: boolean): void {
     try {
       document.querySelectorAll<HTMLAudioElement>("audio").forEach((el) => {
-        if (el !== this.audio) el.muted = muted;
+        if (el !== this.audio) {
+          el.muted = muted;
+          if (muted) el.volume = 0;
+        }
       });
     } catch {}
+  }
+
+  // Keep Spotify silent and paused while an SC track is loaded. Pausing stops
+  // Spotify's position from advancing (so its progress bar stays put for us to
+  // overwrite) and guarantees no audio bleed. We mark the echo to be ignored.
+  private forceSpotifyPaused(): void {
+    try {
+      if (typeof Spicetify !== "undefined" && Spicetify.Player?.isPlaying?.()) {
+        this._ignoreNextPlayPause = true;
+        Spicetify.Player.pause();
+      }
+    } catch {}
+    this.muteSpotifyAudio(true);
+  }
+
+  // Toggle ONLY our own audio element. Spotify's transport is never touched.
+  private toggleSc(): void {
+    if (!this._track) return;
+    if (this.audio.paused) {
+      this.muteSpotifyAudio(true);
+      this.syncSpotifyVolume();
+      void this.audio.play().catch(() => {});
+    } else {
+      this.audio.pause();
+    }
   }
 
   // ── Spotify integration ───────────────────────────────────────────────────
@@ -180,24 +230,28 @@ class SoundCloudPlayer {
     try {
       // ── Play / Pause ──────────────────────────────────────────────────────
       //
-      // We treat every onplaypause event as a user toggle of SC audio.
-      // The button visual is handled by CSS (body.sc-playing + mask).
+      // The on-screen play/pause button is intercepted directly in capture
+      // phase (see hookTransportButtons) so Spotify never toggles its own
+      // transport from a click. This onplaypause handler is only a *fallback*
+      // for external toggles we cannot intercept (media keys, headset buttons).
       //
-      // We do NOT call Spicetify.Player.pause() here — it caused a hard crash
-      // when onplaypause fires mid-track-switch before songchange completes.
-      // Instead: immediately re-mute Spotify audio and sync volume on every
-      // resume so there is no audible bleed from Spotify's track.
+      // For those: Spotify just flipped its own state. We force it back to the
+      // paused+muted baseline and mirror the user's intent onto SC audio. The
+      // _ignoreNextPlayPause guard swallows the echo from our own pause() call.
       Spicetify.Player.addEventListener("onplaypause", () => {
         try {
-          if (!this._track || this._isLoading) return;
-          if (this.audio.paused) {
-            this.muteSpotifyAudio(true);
-            this.syncSpotifyVolume();
-            void this.audio.play().catch(() => {});
-          } else {
-            this.audio.pause();
+          if (this._ignoreNextPlayPause) {
+            this._ignoreNextPlayPause = false;
+            return;
+          }
+          if (this._track && !this._isLoading) {
+            this.forceSpotifyPaused();
+            this.toggleSc();
           }
         } catch {}
+        // Reflect the new state on the badge — covers Spotify-only playback,
+        // where there's no SC track and the block above is skipped.
+        this.refreshSourceBadge();
       });
 
       // ── Volume sync ───────────────────────────────────────────────────────
@@ -319,6 +373,10 @@ class SoundCloudPlayer {
       }
     };
     const tryHook = () => {
+      // Intercept the main play/pause button so a click controls SC audio
+      // directly and Spotify never toggles its own transport (which would
+      // resume Spotify's audio and invert the button's visual state).
+      hookBtn(SEL_PLAYPAUSE, () => this.toggleSc());
       hookBtn(SEL_SKIP_FWD, () => void this.next());
       hookBtn(SEL_SKIP_BCK, () => void this.prev());
     };
@@ -335,51 +393,116 @@ class SoundCloudPlayer {
   // and mouseup/touchend to apply the seek and release the guard.
 
   private hookProgressBar(): void {
-    const tryHook = () => {
-      const inp = q<HTMLInputElement>(SEL_PROGRESS);
-      // The flag lives on the element. If Spotify re-renders and replaces the
-      // DOM node, the new element has no flag → we re-hook it automatically.
-      if (!inp || (inp as HTMLInputElement & { _scSeek?: boolean })._scSeek)
-        return;
-      (inp as HTMLInputElement & { _scSeek?: boolean })._scSeek = true;
-
-      const onStart = () => {
-        if (this._track) this._isSeeking = true;
-      };
-      const onEnd = () => {
-        if (!this._track || !this._isSeeking) return;
+    // Bind the seek-release listener ONCE on document. Previously the release
+    // was handled by a `click` on the bar, but Spotify often swallows it (or the
+    // pointer leaves the bar mid-drag), leaving _isSeeking stuck true forever —
+    // which permanently skips our fill writes so the bar freezes on Spotify's
+    // position. A document-level pointer-up always fires, so the guard clears.
+    if (!this._seekDocBound) {
+      this._seekDocBound = true;
+      const finishSeek = (clientX: number) => {
+        if (!this._isSeeking) return;
         this._isSeeking = false;
-        const max = parseFloat(inp.max);
-        const val = parseFloat(inp.value);
-        if (
-          !isFinite(val) ||
-          !isFinite(this.audio.duration) ||
-          this.audio.duration <= 0
-        )
-          return;
-        let ratio: number;
-        if (isFinite(max) && max > 1000)
-          ratio = val / 1000 / this.audio.duration;
-        else if (isFinite(max) && max > 1) ratio = val / max;
-        else ratio = val;
-        this.seek(Math.max(0, Math.min(1, ratio)));
+        const wrap = this._progressWrap;
+        if (!this._track || !wrap) return;
+        const rect = wrap.getBoundingClientRect();
+        if (rect.width <= 0) return;
+        const r = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        this.seek(r);
+        this.syncSpotifyProgress();
       };
+      document.addEventListener("mouseup", (e) => finishSeek(e.clientX), true);
+      document.addEventListener(
+        "touchend",
+        (e) => {
+          const t = e.changedTouches[0];
+          if (t) finishSeek(t.clientX);
+          else this._isSeeking = false;
+        },
+        true,
+      );
+    }
 
-      inp.addEventListener("mousedown", onStart, {
-        capture: true,
-        passive: true,
-      });
-      inp.addEventListener("touchstart", onStart, {
-        capture: true,
-        passive: true,
-      });
-      inp.addEventListener("mouseup", onEnd, { capture: true });
-      inp.addEventListener("touchend", onEnd, { capture: true });
-    };
+    // (Re)build our overlay bar inside Spotify's wrapper. Re-runs on the 250 ms
+    // timer so it re-attaches whenever Spotify re-renders and drops it.
+    const tryHook = () => this.ensureProgressOverlay();
 
     this._tryHookProgressBar = tryHook;
     tryHook();
     [500, 1500, 4000].forEach((ms) => setTimeout(tryHook, ms));
+  }
+
+  // Build (once) the SC-driven progress bar that overlays Spotify's hidden one.
+  // Handles its own hover tooltip + seek so every value reflects the SC track,
+  // not Spotify's paused track. Re-created automatically if Spotify wipes it.
+  private ensureProgressOverlay(): void {
+    const wrap = q<HTMLElement>(SEL_PROGRESS_WRAP);
+    if (!wrap) return;
+    this._progressWrap = wrap;
+
+    let ov = this._progressOverlay;
+    if (ov && !document.contains(ov)) ov = null;
+    if (ov && ov.parentElement !== wrap) {
+      ov.remove();
+      ov = null;
+    }
+    if (ov) return; // already in place
+
+    ov = document.createElement("div");
+    ov.id = "sc-progress";
+    ov.innerHTML =
+      `<div class="sc-progress__track">` +
+      `<div class="sc-progress__fill"></div>` +
+      `<div class="sc-progress__thumb"></div>` +
+      `</div>` +
+      `<div class="sc-progress__tip"></div>`;
+    const track = ov.querySelector(".sc-progress__track") as HTMLElement;
+    const tip = ov.querySelector(".sc-progress__tip") as HTMLElement;
+
+    const ratioFromX = (clientX: number): number => {
+      const rect = track.getBoundingClientRect();
+      if (rect.width <= 0) return 0;
+      return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    };
+    const scDuration = (): number => {
+      const d = this.audio.duration;
+      if (isFinite(d) && d > 0) return d;
+      return this._track ? this._track.duration / 1000 : 0;
+    };
+
+    const overlay = ov;
+    overlay.addEventListener("mousemove", (e) => {
+      if (!this._track) return;
+      e.stopPropagation(); // suppress Spotify's own (wrong) hover tooltip
+      const ratio = ratioFromX(e.clientX);
+      tip.textContent = fmtTime(ratio * scDuration());
+      tip.style.left = `${ratio * 100}%`;
+      overlay.classList.add("sc-progress--hover");
+      if (this._isSeeking) this.updateProgressOverlay(ratio);
+    });
+    overlay.addEventListener("mouseleave", () => {
+      overlay.classList.remove("sc-progress--hover");
+    });
+    overlay.addEventListener("mousedown", (e) => {
+      if (!this._track) return;
+      e.stopPropagation();
+      this._isSeeking = true; // document mouseup (above) applies the seek
+      this.updateProgressOverlay(ratioFromX(e.clientX));
+    });
+
+    wrap.appendChild(overlay);
+    this._progressOverlay = overlay;
+  }
+
+  // Paint the overlay fill + thumb to a 0..1 fraction of the SC track.
+  private updateProgressOverlay(fraction: number): void {
+    const ov = this._progressOverlay;
+    if (!ov) return;
+    const pct = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+    const fill = ov.querySelector(".sc-progress__fill") as HTMLElement | null;
+    const thumb = ov.querySelector(".sc-progress__thumb") as HTMLElement | null;
+    if (fill) fill.style.width = pct;
+    if (thumb) thumb.style.left = pct;
   }
 
   // ── CSS injection ────────────────────────────────────────────────────────
@@ -433,7 +556,8 @@ class SoundCloudPlayer {
         box-shadow: 0 2px 6px rgba(0,0,0,0.5);
         font-family: var(--font-family, system-ui, sans-serif);
       }
-      #spicecloud-source-badge { background: #ff5500; }
+      #spicecloud-source-badge.sc-badge--soundcloud { background: #ff5500; }
+      #spicecloud-source-badge.sc-badge--spotify { background: #1db954; }
 
       /*
        * Play/Pause button visual sync.
@@ -484,6 +608,30 @@ class SoundCloudPlayer {
       body.sc-active [data-testid="context-item-info-subtitles"] *,
       body.sc-active .now-playing__name *,
       body.sc-active .now-playing__artist * { color: transparent !important; }
+
+      /*
+       * Show the FULL SoundCloud title/artist. Spotify clips them to a measured
+       * marquee window (--marquee-width, e.g. 101px for a short Spotify title),
+       * so longer SC titles get cut off. Expand the whole marquee chain to the
+       * track-info width and disable the marquee so our ::before overlay only
+       * ellipsizes at the real edge. Scoped to sc-active → Spotify untouched
+       * otherwise.
+       */
+      body.sc-active .main-trackInfo-name .main-trackInfo-overlay,
+      body.sc-active .main-trackInfo-artists .main-trackInfo-overlay {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      body.sc-active .main-trackInfo-name .main-trackInfo-overlay *,
+      body.sc-active .main-trackInfo-artists .main-trackInfo-overlay * {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        --marquee-width: 100% !important;
+        transform: none !important;
+        animation: none !important;
+      }
 
       body.sc-active [data-encore-id="text"].main-trackInfo-name::before,
       body.sc-active .main-trackInfo-name::before,
@@ -538,6 +686,78 @@ class SoundCloudPlayer {
         top: 0; left: 0; right: 0; bottom: 0;
         display: flex; align-items: center; justify-content: center;
       }
+
+      /*
+       * Custom SoundCloud progress bar.
+       * Spotify's own fill/thumb/hover-tooltip are computed from ITS paused
+       * track's length, so they can't reflect the SC track. We hide Spotify's
+       * inner bar and overlay our own, fully driven by the SC position. The
+       * overlay sits on top with pointer events, so Spotify never sees hover or
+       * clicks (and thus never shows its wrong tooltip).
+       */
+      body.sc-active [data-testid="playback-progressbar"] { position: relative; }
+      body.sc-active [data-testid="playback-progressbar"] [data-testid="progress-bar"] {
+        visibility: hidden !important;
+      }
+      #sc-progress { display: none; }
+      body.sc-active #sc-progress {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        z-index: 10;
+      }
+      #sc-progress .sc-progress__track {
+        position: relative;
+        width: 100%;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--background-tinted-base, rgba(255,255,255,0.3));
+      }
+      #sc-progress .sc-progress__fill {
+        position: absolute;
+        left: 0; top: 0; bottom: 0;
+        width: 0%;
+        border-radius: 2px;
+        background: var(--spice-text, #fff);
+      }
+      #sc-progress:hover .sc-progress__fill,
+      #sc-progress.sc-progress--hover .sc-progress__fill {
+        background: #1ed760;
+      }
+      #sc-progress .sc-progress__thumb {
+        position: absolute;
+        top: 50%; left: 0%;
+        width: 12px; height: 12px;
+        margin-left: -6px;
+        border-radius: 50%;
+        background: #fff;
+        transform: translateY(-50%);
+        opacity: 0;
+        transition: opacity 0.1s;
+      }
+      #sc-progress:hover .sc-progress__thumb,
+      #sc-progress.sc-progress--hover .sc-progress__thumb {
+        opacity: 1;
+      }
+      #sc-progress .sc-progress__tip {
+        position: absolute;
+        bottom: 100%;
+        left: 0;
+        transform: translateX(-50%);
+        margin-bottom: 8px;
+        padding: 3px 7px;
+        border-radius: 4px;
+        background: #000;
+        color: #fff;
+        font-size: 11px; font-weight: 600;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        font-family: var(--font-family, system-ui, sans-serif);
+      }
+      #sc-progress.sc-progress--hover .sc-progress__tip { opacity: 1; }
     `;
     document.head.appendChild(s);
   }
@@ -566,7 +786,7 @@ class SoundCloudPlayer {
 
   // ── Source badge ─────────────────────────────────────────────────────────
 
-  private updateSourceBadge(source: "soundcloud" | null): void {
+  private updateSourceBadge(source: "soundcloud" | "spotify" | null): void {
     if (this._sourceBadge && !document.contains(this._sourceBadge)) {
       this._sourceBadge = null;
     }
@@ -579,18 +799,52 @@ class SoundCloudPlayer {
 
     if (!source) {
       this._sourceBadge.style.display = "none";
+      this._sourceBadge.dataset.source = "";
       return;
     }
 
-    if (!this._sourceBadge.dataset.ready) {
-      this._sourceBadge.innerHTML =
+    // Re-render only when the source actually changes — the periodic refresh
+    // calls this every tick, so dataset.source doubles as the render marker.
+    if (this._sourceBadge.dataset.source !== source) {
+      this._sourceBadge.dataset.source = source;
+      this._sourceBadge.classList.toggle(
+        "sc-badge--soundcloud",
+        source === "soundcloud",
+      );
+      this._sourceBadge.classList.toggle(
+        "sc-badge--spotify",
+        source === "spotify",
+      );
+      const scSvg =
         `<svg viewBox="0 0 24 24" fill="white" width="16" height="16" aria-hidden="true">` +
         `<path d="M23.999 14.165c-.052 1.796-1.612 3.169-3.4 3.169h-8.18a.68.68 0 0 1-.675-.683V7.862a.747.747 0 0 1 .452-.724s.75-.513 2.333-.513a5.364 5.364 0 0 1 2.763.755 5.433 5.433 0 0 1 2.57 3.54c.282-.08.574-.121.868-.12.884 0 1.73.358 2.347.992s.948 1.49.922 2.373ZM10.721 8.421c.247 2.98.427 5.697 0 8.672a.264.264 0 0 1-.53 0c-.395-2.946-.22-5.718 0-8.672a.264.264 0 0 1 .53 0ZM9.072 9.448c.285 2.659.37 4.986-.006 7.655a.277.277 0 0 1-.55 0c-.331-2.63-.256-5.02 0-7.655a.277.277 0 0 1 .556 0Zm-1.663-.257c.27 2.726.39 5.171 0 7.904a.266.266 0 0 1-.532 0c-.38-2.69-.257-5.21 0-7.904a.266.266 0 0 1 .532 0Zm-1.647.77a26.108 26.108 0 0 1-.008 7.147.272.272 0 0 1-.542 0 27.955 27.955 0 0 1 0-7.147.275.275 0 0 1 .55 0Zm-1.67 1.769c.421 1.865.228 3.5-.029 5.388a.257.257 0 0 1-.514 0c-.21-1.858-.398-3.549 0-5.389a.272.272 0 0 1 .543 0Zm-1.655-.273c.388 1.897.26 3.508-.01 5.412-.026.28-.514.283-.54 0-.244-1.878-.347-3.54-.01-5.412a.283.283 0 0 1 .56 0Zm-1.668.911c.4 1.268.257 2.292-.026 3.572a.257.257 0 0 1-.514 0c-.241-1.262-.354-2.312-.023-3.572a.283.283 0 0 1 .563 0Z"/>` +
         `</svg>SoundCloud`;
-      this._sourceBadge.dataset.ready = "1";
+      const spSvg =
+        `<svg viewBox="0 0 24 24" fill="white" width="16" height="16" aria-hidden="true">` +
+        `<path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>` +
+        `</svg>Spotify`;
+      this._sourceBadge.innerHTML = source === "spotify" ? spSvg : scSvg;
     }
 
     this._sourceBadge.style.display = "flex";
+  }
+
+  // Decide which source badge to show from current state:
+  //   • SoundCloud — an SC track is actively playing or loading
+  //   • Spotify    — no SC track active and Spotify is playing
+  //   • none       — nothing is playing
+  private refreshSourceBadge(): void {
+    let source: "soundcloud" | "spotify" | null = null;
+    if (this._track && (this._isLoading || !this.audio.paused)) {
+      source = "soundcloud";
+    } else {
+      let spotifyPlaying = false;
+      try {
+        spotifyPlaying = !!Spicetify?.Player?.isPlaying?.();
+      } catch {}
+      if (spotifyPlaying) source = "spotify";
+    }
+    this.updateSourceBadge(source);
   }
 
   // ── Progress bar ─────────────────────────────────────────────────────────
@@ -614,10 +868,15 @@ class SoundCloudPlayer {
       if (de) de.setAttribute("data-sc-time", fmtTime(dur));
     } catch {}
 
-    // Skip range-input updates while the user is dragging — otherwise the
+    // Skip fill/thumb updates while the user is dragging — otherwise the
     // thumb snaps back to SC's current position every 250 ms.
     if (this._isSeeking) return;
 
+    // Paint our own overlay bar (Spotify's underlying bar is hidden via CSS),
+    // so the fill exactly matches the SC track's position and length.
+    this.updateProgressOverlay(fraction);
+
+    // Keep the range input in sync too, for the accessibility value text.
     try {
       const inp = q<HTMLInputElement>(SEL_PROGRESS);
       if (inp && nativeRangeSet) {
@@ -635,22 +894,34 @@ class SoundCloudPlayer {
 
   // ── Now-playing metadata ──────────────────────────────────────────────────
 
-  private updateNowPlayingBar(track: SCTrack): void {
-    try {
-      const t = q(SEL_TITLE);
-      if (t) t.setAttribute("data-sc-title", track.title);
-      const a = q(SEL_ARTIST);
-      if (a) a.setAttribute("data-sc-artist", track.user.username);
-      const c = q<HTMLImageElement>(SEL_COVER);
-      const art = track.artwork_url?.replace("-large", "-t500x500") ?? "";
-      if (c && art) c.src = art;
-    } catch {}
+  private updateNowPlayingBar(): void {
     document.body.classList.add("sc-active");
-    this.updateSourceBadge("soundcloud");
+    this.applyTrackInfo();
+    this.refreshSourceBadge();
     setTimeout(() => {
       this._tryHookSkipButtons?.();
       this.hookProgressBar();
     }, 150);
+  }
+
+  // Write the SC title / artist / cover onto Spotify's now-playing widget.
+  // Runs on every timer tick (not just on load) because Spotify re-renders the
+  // track-info widget (e.g. its marquee recalculation) and drops our attributes
+  // — without re-applying, the bar reverts to the paused Spotify track's title.
+  private applyTrackInfo(): void {
+    const track = this._track;
+    if (!track) return;
+    try {
+      const t = q(SEL_TITLE);
+      if (t && t.getAttribute("data-sc-title") !== track.title)
+        t.setAttribute("data-sc-title", track.title);
+      const a = q(SEL_ARTIST);
+      if (a && a.getAttribute("data-sc-artist") !== track.user.username)
+        a.setAttribute("data-sc-artist", track.user.username);
+      const c = q<HTMLImageElement>(SEL_COVER);
+      const art = track.artwork_url?.replace("-large", "-t500x500") ?? "";
+      if (c && art && c.src !== art) c.src = art;
+    } catch {}
   }
 
   // ── Stream URL resolution ─────────────────────────────────────────────────
@@ -662,7 +933,10 @@ class SoundCloudPlayer {
     );
     if (progressive?.url) {
       try {
-        const url = await resolveTranscodingUrl(progressive.url);
+        const url = await resolveTranscodingUrl(
+          progressive.url,
+          track.track_authorization,
+        );
         if (url) return url;
       } catch (e) {
         console.warn("[SpiceCloud] Progressive transcoding resolve failed:", e);
@@ -680,9 +954,11 @@ class SoundCloudPlayer {
     if (this.progressTimer !== null) return;
     this.progressTimer = setInterval(() => {
       this._tryHookProgressBar?.(); // re-hook if Spotify re-rendered the element
+      this._tryHookSkipButtons?.(); // re-hook transport buttons too
+      this.applyTrackInfo(); // re-assert title/artist/cover across re-renders
       this.syncSpotifyProgress();
       this.syncSpotifyVolume();
-      this.muteSpotifyAudio(true);
+      this.forceSpotifyPaused(); // keep Spotify silent AND paused
       this.emit();
     }, 250);
   }
@@ -763,7 +1039,7 @@ class SoundCloudPlayer {
         }
       }
 
-      this.updateNowPlayingBar(track);
+      this.updateNowPlayingBar();
       // Prime time labels immediately so the overlay never shows "0:00/0:00".
       try {
         const pe = q(SEL_POS_TEXT);
@@ -838,6 +1114,10 @@ class SoundCloudPlayer {
 
   destroy(): void {
     this.stopTimer();
+    if (this.badgeTimer !== null) {
+      clearInterval(this.badgeTimer);
+      this.badgeTimer = null;
+    }
     this.audio.pause();
     this.audio.src = "";
     this.audio.remove();
@@ -849,4 +1129,10 @@ class SoundCloudPlayer {
   }
 }
 
-export const player = new SoundCloudPlayer();
+// Cross-bundle singleton. The custom app and the startup extension are compiled
+// into SEPARATE esbuild bundles, so a plain module-level `new` would create TWO
+// players (two <audio> elements, doubled Spotify hooks). Stash the instance on
+// window so whichever bundle loads first creates it and the other reuses it.
+const _w = window as unknown as { __spicecloudPlayer?: SoundCloudPlayer };
+export const player: SoundCloudPlayer =
+  _w.__spicecloudPlayer ?? (_w.__spicecloudPlayer = new SoundCloudPlayer());

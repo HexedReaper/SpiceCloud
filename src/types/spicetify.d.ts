@@ -56,6 +56,9 @@ declare namespace Spicetify {
     function del(url: string, body?: Record<string, unknown>): Promise<Body>;
   }
 
+  /** Internal platform APIs; only used here as a readiness sentinel. */
+  const Platform: unknown;
+
   const React: typeof import("react");
   const ReactDOM: typeof import("react-dom");
 }

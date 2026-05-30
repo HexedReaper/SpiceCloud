@@ -7,7 +7,7 @@ import {
   SCStreamUrls,
   SCTrack,
 } from "../types/soundcloud";
-import { loadSettings } from "./auth";
+import { fetchClientId, loadSettings, saveSettings } from "./auth";
 import { httpGet } from "./http";
 
 const API_BASE = "https://api-v2.soundcloud.com";
@@ -69,9 +69,35 @@ function logDebug(endpoint: string, url: string, raw: unknown): void {
 // SoundCloud v2 accepts the OAuth token as ?oauth_token=... in the query string
 // because CosmosAsync does not support sending custom request headers.
 
+// Re-extract a fresh client_id (SoundCloud rotates them) and persist it.
+// Returns true only if the id actually changed, so a retry is worthwhile.
+let _refreshInFlight: Promise<boolean> | null = null;
+async function refreshClientId(): Promise<boolean> {
+  if (_refreshInFlight) return _refreshInFlight;
+  _refreshInFlight = (async () => {
+    try {
+      const id = await fetchClientId();
+      if (!id) return false;
+      const changed = id !== _settings.clientId;
+      _settings = { ..._settings, clientId: id };
+      saveSettings(_settings);
+      return changed;
+    } catch (e) {
+      console.warn("[SpiceCloud] client_id refresh failed:", e);
+      return false;
+    }
+  })();
+  try {
+    return await _refreshInFlight;
+  } finally {
+    _refreshInFlight = null;
+  }
+}
+
 async function scFetch<T>(
   endpoint: string,
   extra: Record<string, string> = {},
+  attempt = 0,
 ): Promise<T> {
   const params: Record<string, string> = {
     client_id: _settings.clientId,
@@ -196,8 +222,13 @@ export async function getTrackStreams(trackId: number): Promise<SCStreamUrls> {
  */
 export async function resolveTranscodingUrl(
   transcodingApiUrl: string,
+  trackAuthorization?: string,
 ): Promise<string> {
-  const data = await scFetch<{ url: string }>(transcodingApiUrl);
+  // SoundCloud's progressive media endpoint requires the track's
+  // track_authorization token; without it the request 404/401s.
+  const extra: Record<string, string> = {};
+  if (trackAuthorization) extra.track_authorization = trackAuthorization;
+  const data = await scFetch<{ url: string }>(transcodingApiUrl, extra);
   if (!data?.url) throw new Error("Transcoding resolution returned no URL");
   return data.url;
 }
