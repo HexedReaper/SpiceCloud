@@ -12,22 +12,22 @@
 
 ## Features
 
-| | |
-|---|---|
-| **Full playback** | Play any SoundCloud track through Spotify's native now-playing bar — title, artist, artwork, progress bar, volume, and skip controls all work |
-| **Search dropdown** | SoundCloud results appear directly in Spotify's search dropdown as you type, interleaved with Spotify results |
-| **Search page** | A dedicated SoundCloud section is injected into Spotify's full search results page, using native Spotify row styling |
-| **Feed** | Browse your SoundCloud stream exactly as it appears on soundcloud.com |
-| **Liked tracks** | Your SoundCloud likes displayed in Spotify's UI with like/unlike support |
-| **Playlists** | Browse and play your SoundCloud sets |
-| **Source badge** | Subtle orange SC indicator appears when a SoundCloud track is playing |
-| **Auto client_id** | No API key setup needed — the `client_id` is extracted automatically from SoundCloud's own bundles and refreshed silently |
+|                     |                                                                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Full playback**   | Play any SoundCloud track through Spotify's native now-playing bar — title, artist, artwork, progress bar, volume, and skip controls all work |
+| **Search dropdown** | SoundCloud results appear directly in Spotify's search dropdown as you type, interleaved with Spotify results                                 |
+| **Search page**     | A dedicated SoundCloud section is injected into Spotify's full search results page, using native Spotify row styling                          |
+| **Feed**            | Browse your SoundCloud stream exactly as it appears on soundcloud.com                                                                         |
+| **Liked tracks**    | Your SoundCloud likes displayed in Spotify's UI with like/unlike support                                                                      |
+| **Playlists**       | Browse and play your SoundCloud sets                                                                                                          |
+| **Source badge**    | Subtle orange SC indicator appears when a SoundCloud track is playing                                                                         |
+| **Auto client_id**  | No API key setup needed — the `client_id` is extracted automatically from SoundCloud's own bundles and refreshed silently                     |
 
 ---
 
 ## Installation
 
-### Via Spicetify Marketplace *(easiest)*
+### Via Spicetify Marketplace _(easiest)_
 
 1. Open Spotify with Spicetify installed
 2. Open the Marketplace tab in the sidebar
