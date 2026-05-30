@@ -15,11 +15,13 @@ type Listener = (state: PlayerState) => void;
 
 // ── Spotify DOM selectors ─────────────────────────────────────────────────────
 const SEL_TITLE = [
+  '[data-encore-id="text"].main-trackInfo-name', // inner Encore text node — has inherent height
   ".main-trackInfo-name",
   '[data-testid="context-item-info-title"]',
   ".now-playing__name",
 ];
 const SEL_ARTIST = [
+  '[data-encore-id="text"].main-trackInfo-artists', // inner Encore text node
   ".main-trackInfo-artists",
   '[data-testid="context-item-info-subtitles"]',
   ".now-playing__artist",
@@ -96,6 +98,7 @@ class SoundCloudPlayer {
   private _selfPausingSpotify = false;
   private _sourceBadge: HTMLElement | null = null;
   private _tryHookSkipButtons: (() => void) | null = null;
+  private _tryHookProgressBar: (() => void) | null = null;
   // Seek guard — when user is dragging the progress bar we must not overwrite
   // the range input's value or the thumb snaps back every 250 ms.
   private _isSeeking = false;
@@ -207,6 +210,29 @@ class SoundCloudPlayer {
         } catch {}
       }
 
+      // Direct input listener on the volume slider — fires on every drag step
+      // so SC audio tracks the slider in real-time without waiting for the
+      // 250ms timer or a Spicetify event.
+      const hookVolumeInput = () => {
+        const inp = q<HTMLInputElement>(SEL_VOLUME);
+        if (!inp || (inp as HTMLInputElement & { _scVol?: boolean })._scVol) return;
+        (inp as HTMLInputElement & { _scVol?: boolean })._scVol = true;
+        inp.addEventListener("input", () => { if (this._track) this.syncSpotifyVolume(); });
+        // Mirror the mute button so clicking mute also silences SC audio.
+        const muteBtn = document.querySelector<HTMLButtonElement>(
+          '[data-testid="volume-bar-toggle-mute-button"]',
+        );
+        if (muteBtn && !(muteBtn as HTMLButtonElement & { _scMute?: boolean })._scMute) {
+          (muteBtn as HTMLButtonElement & { _scMute?: boolean })._scMute = true;
+          muteBtn.addEventListener("click", () => {
+            if (!this._track) return;
+            setTimeout(() => { this.audio.muted = !this.audio.muted; }, 50);
+          });
+        }
+      };
+      hookVolumeInput();
+      [500, 1500, 4000].forEach((ms) => setTimeout(hookVolumeInput, ms));
+
       // ── Next / Previous ───────────────────────────────────────────────────
       const doNext = () => {
         if (this._track) void this.next();
@@ -303,44 +329,33 @@ class SoundCloudPlayer {
   private hookProgressBar(): void {
     const tryHook = () => {
       const inp = q<HTMLInputElement>(SEL_PROGRESS);
-      if (!inp || (inp as HTMLInputElement & { _scSeek?: boolean })._scSeek)
-        return;
+      // The flag lives on the element. If Spotify re-renders and replaces the
+      // DOM node, the new element has no flag → we re-hook it automatically.
+      if (!inp || (inp as HTMLInputElement & { _scSeek?: boolean })._scSeek) return;
       (inp as HTMLInputElement & { _scSeek?: boolean })._scSeek = true;
 
-      const onStart = () => {
-        if (this._track) this._isSeeking = true;
-      };
+      const onStart = () => { if (this._track) this._isSeeking = true; };
       const onEnd = () => {
         if (!this._track || !this._isSeeking) return;
         this._isSeeking = false;
         const max = parseFloat(inp.max);
         const val = parseFloat(inp.value);
-        if (
-          !isFinite(val) ||
-          !isFinite(this.audio.duration) ||
-          this.audio.duration <= 0
-        )
+        if (!isFinite(val) || !isFinite(this.audio.duration) || this.audio.duration <= 0)
           return;
         let ratio: number;
-        if (isFinite(max) && max > 1000)
-          ratio = val / 1000 / this.audio.duration;
+        if (isFinite(max) && max > 1000) ratio = val / 1000 / this.audio.duration;
         else if (isFinite(max) && max > 1) ratio = val / max;
         else ratio = val;
         this.seek(Math.max(0, Math.min(1, ratio)));
       };
 
-      inp.addEventListener("mousedown", onStart, {
-        capture: true,
-        passive: true,
-      });
-      inp.addEventListener("touchstart", onStart, {
-        capture: true,
-        passive: true,
-      });
+      inp.addEventListener("mousedown", onStart, { capture: true, passive: true });
+      inp.addEventListener("touchstart", onStart, { capture: true, passive: true });
       inp.addEventListener("mouseup", onEnd, { capture: true });
       inp.addEventListener("touchend", onEnd, { capture: true });
     };
 
+    this._tryHookProgressBar = tryHook;
     tryHook();
     [500, 1500, 4000].forEach((ms) => setTimeout(tryHook, ms));
   }
@@ -422,57 +437,61 @@ class SoundCloudPlayer {
       }
 
       /*
-       * Track-info overlay: data-sc-title / data-sc-artist attributes + CSS ::before.
+       * Track-info overlay: data-sc-title / data-sc-artist on the inner Encore
+       * text node + CSS ::before.  Targeting the inner element (which has its
+       * own text height) avoids the zero-height issue on the outer container.
        * Never touches textContent → no React reconciliation conflict.
        */
+      body.sc-active [data-encore-id="text"].main-trackInfo-name,
+      body.sc-active [data-encore-id="text"].main-trackInfo-artists,
       body.sc-active .main-trackInfo-name,
+      body.sc-active .main-trackInfo-artists,
       body.sc-active [data-testid="context-item-info-title"],
-      body.sc-active .now-playing__name {
+      body.sc-active [data-testid="context-item-info-subtitles"],
+      body.sc-active .now-playing__name,
+      body.sc-active .now-playing__artist {
         color: transparent !important;
         position: relative !important;
-        white-space: nowrap !important;
         overflow: hidden !important;
       }
+      body.sc-active [data-encore-id="text"].main-trackInfo-name *,
+      body.sc-active [data-encore-id="text"].main-trackInfo-artists *,
       body.sc-active .main-trackInfo-name *,
+      body.sc-active .main-trackInfo-artists *,
       body.sc-active [data-testid="context-item-info-title"] *,
-      body.sc-active .now-playing__name * { color: transparent !important; }
+      body.sc-active [data-testid="context-item-info-subtitles"] *,
+      body.sc-active .now-playing__name *,
+      body.sc-active .now-playing__artist * { color: transparent !important; }
+
+      body.sc-active [data-encore-id="text"].main-trackInfo-name::before,
       body.sc-active .main-trackInfo-name::before,
       body.sc-active [data-testid="context-item-info-title"]::before,
       body.sc-active .now-playing__name::before {
         content: attr(data-sc-title);
-        color: var(--spice-text, #fff);
+        color: #fff;
         position: absolute;
-        z-index: 1;
-        top: 0; left: 0; right: 0; bottom: 0;
-        display: flex; align-items: center;
+        inset: 0;
+        z-index: 9999;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        font: inherit;
+        display: flex; align-items: center;
       }
-
-      body.sc-active .main-trackInfo-artists,
-      body.sc-active [data-testid="context-item-info-subtitles"],
-      body.sc-active .now-playing__artist {
-        color: transparent !important;
-        position: relative !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-      }
-      body.sc-active .main-trackInfo-artists *,
-      body.sc-active [data-testid="context-item-info-subtitles"] *,
-      body.sc-active .now-playing__artist * { color: transparent !important; }
+      body.sc-active [data-encore-id="text"].main-trackInfo-artists::before,
       body.sc-active .main-trackInfo-artists::before,
       body.sc-active [data-testid="context-item-info-subtitles"]::before,
       body.sc-active .now-playing__artist::before {
         content: attr(data-sc-artist);
-        color: var(--spice-subtext, #b3b3b3);
+        color: rgba(255,255,255,0.7);
         position: absolute;
-        z-index: 1;
-        top: 0; left: 0; right: 0; bottom: 0;
-        display: flex; align-items: center;
+        inset: 0;
+        z-index: 9999;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        font: inherit;
+        display: flex; align-items: center;
       }
 
       /*
@@ -638,6 +657,7 @@ class SoundCloudPlayer {
   private startTimer(): void {
     if (this.progressTimer !== null) return;
     this.progressTimer = setInterval(() => {
+      this._tryHookProgressBar?.(); // re-hook if Spotify re-rendered the element
       this.syncSpotifyProgress();
       this.syncSpotifyVolume();
       this.muteSpotifyAudio(true);

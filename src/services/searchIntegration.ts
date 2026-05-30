@@ -312,6 +312,7 @@ function onCaptureKeydown(e: KeyboardEvent): void {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function initSearchIntegration(): void {
+  if (_bodyObs) return; // already running — prevents double-init from module boot + React mount
   _destroyed = false;
   injectStyles();
 

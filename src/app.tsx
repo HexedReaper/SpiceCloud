@@ -13,6 +13,30 @@ import {
 } from "./services/searchIntegration";
 import { t } from "./i18n";
 
+// Boot search integration as soon as Spicetify is ready — does not require
+// the user to click the SpiceCloud tab first. initSearchIntegration is
+// idempotent (guard inside), so the React useEffect below is safe to call it
+// again after auth changes.
+(function boot() {
+  if (
+    typeof Spicetify === "undefined" ||
+    !Spicetify.Player ||
+    !Spicetify.LocalStorage
+  ) {
+    setTimeout(boot, 100);
+    return;
+  }
+  try {
+    const raw = Spicetify.LocalStorage.get("spicecloud:settings");
+    if (!raw) return;
+    const { clientId, oauthToken } = JSON.parse(raw) as {
+      clientId?: string;
+      oauthToken?: string;
+    };
+    if (clientId && oauthToken) initSearchIntegration();
+  } catch {}
+})();
+
 export default function App() {
   const { isAuthed, isConnecting, error, connect, disconnect } = useAuth();
   const [activeTab, setActiveTab] = useState<NavTab>("feed");
