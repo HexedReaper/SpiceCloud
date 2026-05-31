@@ -352,9 +352,10 @@ export function initSearchPageIntegration(): void {
     });
   }
 
-  // Fallback: poll every 500 ms — covers cases where History isn't available
-  // and acts as a safety net for re-injection if React replaces #searchPage
-  _pollInterval = setInterval(onRouteChange, 500);
+  // Safety-net poll: catches re-injection needs if React replaces #searchPage
+  // and acts as a fallback when History isn't available.  2 s is fine — the
+  // History listener handles navigation instantly when present.
+  _pollInterval = setInterval(onRouteChange, 2000);
 
   onRouteChange();
 }

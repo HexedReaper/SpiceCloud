@@ -15,13 +15,15 @@ type Listener = (state: PlayerState) => void;
 
 // ── Spotify DOM selectors ─────────────────────────────────────────────────────
 const SEL_TITLE = [
-  '[data-encore-id="text"].main-trackInfo-name', // inner Encore text node — has inherent height
+  ".main-trackInfo-name:not([data-encore-id])", // outer layout container — correct ::before positioning
+  '[data-encore-id="text"].main-trackInfo-name', // fallback: inner Encore text node
   ".main-trackInfo-name",
   '[data-testid="context-item-info-title"]',
   ".now-playing__name",
 ];
 const SEL_ARTIST = [
-  '[data-encore-id="text"].main-trackInfo-artists', // inner Encore text node
+  ".main-trackInfo-artists:not([data-encore-id])", // outer layout container — correct ::before positioning
+  '[data-encore-id="text"].main-trackInfo-artists', // fallback: inner Encore text node
   ".main-trackInfo-artists",
   '[data-testid="context-item-info-subtitles"]',
   ".now-playing__artist",
@@ -99,8 +101,6 @@ class SoundCloudPlayer {
   private queueIndex = -1;
   private listeners: Set<Listener> = new Set();
   private progressTimer: ReturnType<typeof setInterval> | null = null;
-  // Reset by songchange to ensure any lingering echo is not acted on.
-  private _selfPausingSpotify = false;
   // Set right before we call Spicetify.Player.pause() ourselves so the
   // resulting onplaypause echo isn't mistaken for a user/media-key toggle.
   private _ignoreNextPlayPause = false;
@@ -122,6 +122,19 @@ class SoundCloudPlayer {
   // actually playing (SoundCloud vs Spotify), even when no SC track is loaded
   // and the 250 ms SC timer isn't running.
   private badgeTimer: ReturnType<typeof setInterval> | null = null;
+  // Mute-state cache — avoids querySelectorAll("audio") on every 250 ms tick.
+  private _spotifyMuted = false;
+  private _muteCheckAt = 0;
+  // Cached now-playing bar elements — re-queried only when detached.
+  private _cachedTitleEl: Element | null = null;
+  private _cachedArtistEl: Element | null = null;
+  private _cachedCoverEl: HTMLImageElement | null = null;
+  private _cachedPosEl: Element | null = null;
+  private _cachedDurEl: Element | null = null;
+  private _cachedRangeEl: HTMLInputElement | null = null;
+  // Direct references to the SC progress-overlay children (never re-query).
+  private _progressFill: HTMLElement | null = null;
+  private _progressThumb: HTMLElement | null = null;
 
   constructor() {
     this.audio = document.createElement("audio");
@@ -147,7 +160,7 @@ class SoundCloudPlayer {
     // Keep the source badge live even when Spotify (not SC) is the active
     // source — Spotify's own play/songchange don't always reach our handlers.
     if (this.badgeTimer === null) {
-      this.badgeTimer = setInterval(() => this.refreshSourceBadge(), 800);
+      this.badgeTimer = setInterval(() => this.refreshSourceBadge(), 2000);
     }
     this.refreshSourceBadge();
   }
@@ -159,6 +172,7 @@ class SoundCloudPlayer {
       document.body.classList.add("sc-playing");
       this.startTimer();
       this.emit();
+      this.refreshSourceBadge();
     });
     this.audio.addEventListener("pause", () => {
       document.body.classList.remove("sc-playing");
@@ -166,9 +180,8 @@ class SoundCloudPlayer {
       // _track is set so Spotify's audio stays silent even when SC is paused.
       // stopTimer() is called only when _track is cleared (songchange / destroy).
       this.emit();
+      this.refreshSourceBadge();
     });
-    this.audio.addEventListener("play", () => this.refreshSourceBadge());
-    this.audio.addEventListener("pause", () => this.refreshSourceBadge());
     this.audio.addEventListener("ended", () => {
       void this.next();
       this.refreshSourceBadge();
@@ -189,6 +202,13 @@ class SoundCloudPlayer {
   // track position doesn't advance), and its button state is handled by CSS.
 
   private muteSpotifyAudio(muted: boolean): void {
+    const now = Date.now();
+    // Skip the querySelectorAll scan when we're already in the desired mute
+    // state and checked recently (5 s).  Always apply unmute immediately so
+    // Spotify audio is never stuck silent after SC stops.
+    if (muted && this._spotifyMuted && now - this._muteCheckAt < 5000) return;
+    this._spotifyMuted = muted;
+    this._muteCheckAt = now;
     try {
       document.querySelectorAll<HTMLAudioElement>("audio").forEach((el) => {
         if (el !== this.audio) {
@@ -337,11 +357,16 @@ class SoundCloudPlayer {
           this.audio.pause();
           this._track = null;
           this._error = null;
-          this._selfPausingSpotify = false;
           this.stopTimer();
           this.muteSpotifyAudio(false);
           this.updateSourceBadge(null);
           document.body.classList.remove("sc-active", "sc-playing");
+          this._cachedTitleEl = null;
+          this._cachedArtistEl = null;
+          this._cachedCoverEl = null;
+          this._cachedPosEl = null;
+          this._cachedDurEl = null;
+          this._cachedRangeEl = null;
           this.emit();
         } catch {}
       });
@@ -436,15 +461,24 @@ class SoundCloudPlayer {
   // Handles its own hover tooltip + seek so every value reflects the SC track,
   // not Spotify's paused track. Re-created automatically if Spotify wipes it.
   private ensureProgressOverlay(): void {
-    const wrap = q<HTMLElement>(SEL_PROGRESS_WRAP);
-    if (!wrap) return;
-    this._progressWrap = wrap;
+    let wrap = this._progressWrap;
+    if (!wrap || !document.contains(wrap)) {
+      wrap = q<HTMLElement>(SEL_PROGRESS_WRAP);
+      if (!wrap) return;
+      this._progressWrap = wrap;
+    }
 
     let ov = this._progressOverlay;
-    if (ov && !document.contains(ov)) ov = null;
+    if (ov && !document.contains(ov)) {
+      ov = null;
+      this._progressFill = null;
+      this._progressThumb = null;
+    }
     if (ov && ov.parentElement !== wrap) {
       ov.remove();
       ov = null;
+      this._progressFill = null;
+      this._progressThumb = null;
     }
     if (ov) return; // already in place
 
@@ -456,6 +490,8 @@ class SoundCloudPlayer {
       `<div class="sc-progress__thumb"></div>` +
       `</div>` +
       `<div class="sc-progress__tip"></div>`;
+    const fill = ov.querySelector(".sc-progress__fill") as HTMLElement;
+    const thumb = ov.querySelector(".sc-progress__thumb") as HTMLElement;
     const track = ov.querySelector(".sc-progress__track") as HTMLElement;
     const tip = ov.querySelector(".sc-progress__tip") as HTMLElement;
 
@@ -492,17 +528,16 @@ class SoundCloudPlayer {
 
     wrap.appendChild(overlay);
     this._progressOverlay = overlay;
+    this._progressFill = fill;
+    this._progressThumb = thumb;
   }
 
   // Paint the overlay fill + thumb to a 0..1 fraction of the SC track.
   private updateProgressOverlay(fraction: number): void {
-    const ov = this._progressOverlay;
-    if (!ov) return;
+    if (!this._progressOverlay) return;
     const pct = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
-    const fill = ov.querySelector(".sc-progress__fill") as HTMLElement | null;
-    const thumb = ov.querySelector(".sc-progress__thumb") as HTMLElement | null;
-    if (fill) fill.style.width = pct;
-    if (thumb) thumb.style.left = pct;
+    if (this._progressFill) this._progressFill.style.width = pct;
+    if (this._progressThumb) this._progressThumb.style.left = pct;
   }
 
   // ── CSS injection ────────────────────────────────────────────────────────
@@ -583,9 +618,8 @@ class SoundCloudPlayer {
       }
 
       /*
-       * Track-info overlay: data-sc-title / data-sc-artist on the inner Encore
-       * text node + CSS ::before.  Targeting the inner element (which has its
-       * own text height) avoids the zero-height issue on the outer container.
+       * Track-info overlay: data-sc-title / data-sc-artist stamped on the
+       * outer track-info container divs + CSS ::before overlay that fills them.
        * Never touches textContent → no React reconciliation conflict.
        */
       body.sc-active [data-encore-id="text"].main-trackInfo-name,
@@ -633,10 +667,9 @@ class SoundCloudPlayer {
         animation: none !important;
       }
 
-      body.sc-active [data-encore-id="text"].main-trackInfo-name::before,
-      body.sc-active .main-trackInfo-name::before,
-      body.sc-active [data-testid="context-item-info-title"]::before,
-      body.sc-active .now-playing__name::before {
+      body.sc-active .main-trackInfo-name[data-sc-title]::before,
+      body.sc-active [data-testid="context-item-info-title"][data-sc-title]::before,
+      body.sc-active .now-playing__name[data-sc-title]::before {
         content: attr(data-sc-title);
         color: #fff;
         position: absolute;
@@ -648,10 +681,9 @@ class SoundCloudPlayer {
         font: inherit;
         display: flex; align-items: center;
       }
-      body.sc-active [data-encore-id="text"].main-trackInfo-artists::before,
-      body.sc-active .main-trackInfo-artists::before,
-      body.sc-active [data-testid="context-item-info-subtitles"]::before,
-      body.sc-active .now-playing__artist::before {
+      body.sc-active .main-trackInfo-artists[data-sc-artist]::before,
+      body.sc-active [data-testid="context-item-info-subtitles"][data-sc-artist]::before,
+      body.sc-active .now-playing__artist[data-sc-artist]::before {
         content: attr(data-sc-artist);
         color: rgba(255,255,255,0.7);
         position: absolute;
@@ -862,10 +894,14 @@ class SoundCloudPlayer {
 
     // Always update time labels (text changes don't interfere with drag).
     try {
-      const pe = q(SEL_POS_TEXT);
-      if (pe) pe.setAttribute("data-sc-time", fmtTime(cur));
-      const de = q(SEL_DUR_TEXT);
-      if (de) de.setAttribute("data-sc-time", fmtTime(dur));
+      if (!this._cachedPosEl || !document.contains(this._cachedPosEl))
+        this._cachedPosEl = q(SEL_POS_TEXT);
+      if (this._cachedPosEl)
+        this._cachedPosEl.setAttribute("data-sc-time", fmtTime(cur));
+      if (!this._cachedDurEl || !document.contains(this._cachedDurEl))
+        this._cachedDurEl = q(SEL_DUR_TEXT);
+      if (this._cachedDurEl)
+        this._cachedDurEl.setAttribute("data-sc-time", fmtTime(dur));
     } catch {}
 
     // Skip fill/thumb updates while the user is dragging — otherwise the
@@ -878,7 +914,9 @@ class SoundCloudPlayer {
 
     // Keep the range input in sync too, for the accessibility value text.
     try {
-      const inp = q<HTMLInputElement>(SEL_PROGRESS);
+      if (!this._cachedRangeEl || !document.contains(this._cachedRangeEl))
+        this._cachedRangeEl = q<HTMLInputElement>(SEL_PROGRESS);
+      const inp = this._cachedRangeEl;
       if (inp && nativeRangeSet) {
         const max = parseFloat(inp.max);
         const val =
@@ -912,13 +950,21 @@ class SoundCloudPlayer {
     const track = this._track;
     if (!track) return;
     try {
-      const t = q(SEL_TITLE);
+      if (!this._cachedTitleEl || !document.contains(this._cachedTitleEl))
+        this._cachedTitleEl = q(SEL_TITLE);
+      const t = this._cachedTitleEl;
       if (t && t.getAttribute("data-sc-title") !== track.title)
         t.setAttribute("data-sc-title", track.title);
-      const a = q(SEL_ARTIST);
+
+      if (!this._cachedArtistEl || !document.contains(this._cachedArtistEl))
+        this._cachedArtistEl = q(SEL_ARTIST);
+      const a = this._cachedArtistEl;
       if (a && a.getAttribute("data-sc-artist") !== track.user.username)
         a.setAttribute("data-sc-artist", track.user.username);
-      const c = q<HTMLImageElement>(SEL_COVER);
+
+      if (!this._cachedCoverEl || !document.contains(this._cachedCoverEl))
+        this._cachedCoverEl = q<HTMLImageElement>(SEL_COVER);
+      const c = this._cachedCoverEl;
       const art = track.artwork_url?.replace("-large", "-t500x500") ?? "";
       if (c && art && c.src !== art) c.src = art;
     } catch {}
@@ -1124,7 +1170,17 @@ class SoundCloudPlayer {
     this.muteSpotifyAudio(false);
     this._sourceBadge?.remove();
     this._sourceBadge = null;
+    this._progressOverlay?.remove();
+    this._progressOverlay = null;
+    this._progressFill = null;
+    this._progressThumb = null;
     document.body.classList.remove("sc-active", "sc-playing");
+    this._cachedTitleEl = null;
+    this._cachedArtistEl = null;
+    this._cachedCoverEl = null;
+    this._cachedPosEl = null;
+    this._cachedDurEl = null;
+    this._cachedRangeEl = null;
     this.listeners.clear();
   }
 }
