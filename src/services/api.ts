@@ -9,6 +9,7 @@ import {
 } from "../types/soundcloud";
 import { fetchClientId, loadSettings, saveSettings } from "./auth";
 import { httpGet, httpRequest } from "./http";
+import { log, warn } from "./debug";
 
 const API_BASE = "https://api-v2.soundcloud.com";
 
@@ -71,19 +72,58 @@ function logDebug(endpoint: string, url: string, raw: unknown): void {
 
 // Re-extract a fresh client_id (SoundCloud rotates them) and persist it.
 // Returns true only if the id actually changed, so a retry is worthwhile.
+// ── CosmosAsync readiness ─────────────────────────────────────────────────────
+// The custom app React components mount and fire data fetches immediately, but
+// Spicetify.CosmosAsync may not be initialised yet.  Without a readiness gate
+// scFetch falls through to httpGet, which uses browser fetch() in the app
+// context (no window.require) and is CORS-blocked by SoundCloud.
+let _cosmosAsyncReady: Promise<void> | null = null;
+
+function waitForCosmosAsync(timeoutMs = 15_000): Promise<void> {
+  if (_cosmosAsyncReady) return _cosmosAsyncReady;
+  _cosmosAsyncReady = new Promise<void>((resolve) => {
+    if (typeof Spicetify !== "undefined" && Spicetify.CosmosAsync) {
+      resolve();
+      return;
+    }
+    const deadline = Date.now() + timeoutMs;
+    const poll = (): void => {
+      if (typeof Spicetify !== "undefined" && Spicetify.CosmosAsync) {
+        resolve();
+      } else if (Date.now() < deadline) {
+        setTimeout(poll, 100);
+      } else {
+        resolve(); // timed out — let scFetch try and fail gracefully
+      }
+    };
+    setTimeout(poll, 100);
+  });
+  return _cosmosAsyncReady;
+}
+
 let _refreshInFlight: Promise<boolean> | null = null;
 async function refreshClientId(): Promise<boolean> {
   if (_refreshInFlight) return _refreshInFlight;
   _refreshInFlight = (async () => {
+    log("api", "refreshing client_id...");
     try {
       const id = await fetchClientId();
-      if (!id) return false;
+      if (!id) {
+        warn("api", "client_id refresh returned null");
+        return false;
+      }
       const changed = id !== _settings.clientId;
+      log(
+        "api",
+        "client_id refresh done (changed=%s, id=%s…)",
+        changed,
+        id.slice(0, 8),
+      );
       _settings = { ..._settings, clientId: id };
       saveSettings(_settings);
       return changed;
     } catch (e) {
-      console.warn("[SpiceCloud] client_id refresh failed:", e);
+      warn("api", "client_id refresh failed:", e);
       return false;
     }
   })();
@@ -115,6 +155,10 @@ async function scFetch<T>(
   Object.entries(params).forEach(([k, v]) => urlObj.searchParams.set(k, v));
   const url = urlObj.toString();
 
+  // Wait for Spicetify.CosmosAsync to initialise before making any request.
+  await waitForCosmosAsync();
+
+  log("api", "fetch %s", endpoint);
   // ── 1. CosmosAsync (preferred) ─────────────────────────────────────────────
   if (typeof Spicetify !== "undefined" && Spicetify.CosmosAsync) {
     try {
@@ -154,22 +198,36 @@ async function scFetch<T>(
       logDebug(endpoint, url, data);
 
       if (httpStatus < 400) {
+        log("api", "CosmosAsync ok ← %s (HTTP %d)", endpoint, httpStatus);
         return data as T;
       }
       // Any HTTP error from CosmosAsync may be the CORS proxy rejecting the
       // request rather than a real SC error — fall through to httpGet.
       throw new Error(`CosmosAsync HTTP ${httpStatus} on ${endpoint}`);
     } catch (err) {
-      console.warn(
-        "[SpiceCloud] CosmosAsync failed, falling back to httpGet:",
-        err,
-      );
+      warn("api", "CosmosAsync failed, falling back to httpGet:", err);
     }
   }
 
   // ── 2. httpGet fallback ─────────────────────────────────────────────────────
+  // Only useful when window.require is available (Node.js context, no CORS).
+  // In the custom-app renderer there is no require, so browser fetch() would be
+  // CORS-blocked by SoundCloud — skip it and surface the CosmosAsync error.
+  const _hasRequire = !!(
+    window as unknown as { require?: (id: string) => unknown }
+  ).require;
+  if (!_hasRequire) {
+    throw new Error(
+      `SoundCloud request failed: CosmosAsync unavailable for ${endpoint}`,
+    );
+  }
+  log("api", "httpGet ← %s", endpoint);
   const res = await httpGet(url, { Accept: "application/json; charset=utf-8" });
   if (!res.ok) {
+    if ((res.status === 401 || res.status === 403) && attempt === 0) {
+      const refreshed = await refreshClientId();
+      if (refreshed) return scFetch<T>(endpoint, extra, 1);
+    }
     const body = await res.text().catch(() => "");
     throw new Error(
       `SoundCloud ${res.status} on ${endpoint}: ${body.slice(0, 200)}`,
@@ -177,6 +235,7 @@ async function scFetch<T>(
   }
   const data = await res.json<T>();
   logDebug(endpoint, url, data);
+  log("api", "httpGet ok ← %s", endpoint);
   return data;
 }
 
@@ -188,11 +247,18 @@ async function scFetch<T>(
 async function ensureUserId(): Promise<number> {
   if (_userId !== null) return _userId;
   if (!_userIdPromise) {
-    _userIdPromise = getMe().then((me) => {
-      _userId = me.id;
-      _userIdPromise = null;
-      return me.id;
-    });
+    _userIdPromise = getMe()
+      .then((me) => {
+        _userId = me.id;
+        _userIdPromise = null;
+        return me.id;
+      })
+      .catch((err) => {
+        // Clear so the next caller triggers a fresh attempt instead of
+        // re-throwing the same stale rejected promise forever.
+        _userIdPromise = null;
+        throw err;
+      });
   }
   return _userIdPromise;
 }

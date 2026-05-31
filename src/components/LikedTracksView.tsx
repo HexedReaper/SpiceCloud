@@ -75,8 +75,8 @@ export function LikedTracksView() {
   const handleLike = useCallback(
     async (track: SCTrack) => {
       const wasLiked = likedIds.has(track.id);
-      await toggleLike(track.id);
-      if (wasLiked) {
+      const success = await toggleLike(track.id);
+      if (wasLiked && success) {
         setTracks((prev) => prev.filter((t) => t.id !== track.id));
       }
     },

@@ -1,5 +1,6 @@
 import { SCTrack } from "../types/soundcloud";
 import { getTrackStreams, resolveTranscodingUrl } from "./api";
+import { log, warn, error as logError } from "./debug";
 
 export interface PlayerState {
   track: SCTrack | null;
@@ -7,6 +8,7 @@ export interface PlayerState {
   position: number; // 0-1
   duration: number; // seconds
   volume: number;
+  isMuted: boolean;
   isLoading: boolean;
   error: string | null;
 }
@@ -140,6 +142,7 @@ class SoundCloudPlayer {
     this.audio = document.createElement("audio");
     this.audio.id = "spicecloud-audio";
     document.body.appendChild(this.audio);
+    log("player", "initialized, audio element created");
     this.bindAudioEvents();
     this.injectStyles();
     this.waitForSpicetify();
@@ -154,6 +157,7 @@ class SoundCloudPlayer {
       setTimeout(() => this.waitForSpicetify(), 100);
       return;
     }
+    log("player", "Spicetify ready, hooking transport");
     this.hookSpotifyPlayer();
     this.hookSkipButtons();
     this.hookProgressBar();
@@ -169,12 +173,14 @@ class SoundCloudPlayer {
 
   private bindAudioEvents(): void {
     this.audio.addEventListener("play", () => {
+      log("player", "audio play — track: %s", this._track?.title ?? "(none)");
       document.body.classList.add("sc-playing");
       this.startTimer();
       this.emit();
       this.refreshSourceBadge();
     });
     this.audio.addEventListener("pause", () => {
+      log("player", "audio pause");
       document.body.classList.remove("sc-playing");
       // Do NOT stop the timer here — the mute loop must keep running while
       // _track is set so Spotify's audio stays silent even when SC is paused.
@@ -183,12 +189,26 @@ class SoundCloudPlayer {
       this.refreshSourceBadge();
     });
     this.audio.addEventListener("ended", () => {
+      log(
+        "player",
+        "audio ended, advancing queue (%d/%d)",
+        this.queueIndex + 1,
+        this.queue.length,
+      );
       void this.next();
       this.refreshSourceBadge();
     });
-    this.audio.addEventListener("loadedmetadata", () => this.emit());
+    this.audio.addEventListener("loadedmetadata", () => {
+      log("player", "loadedmetadata — duration: %.1fs", this.audio.duration);
+      this.emit();
+    });
     this.audio.addEventListener("volumechange", () => this.emit());
     this.audio.addEventListener("error", () => {
+      logError(
+        "player",
+        "audio error:",
+        this.audio.error?.message ?? "unknown",
+      );
       this._isLoading = false;
       this._error = "Stream error — track may be unavailable";
       this.emit();
@@ -234,7 +254,7 @@ class SoundCloudPlayer {
 
   // Toggle ONLY our own audio element. Spotify's transport is never touched.
   private toggleSc(): void {
-    if (!this._track) return;
+    if (!this._track || this._error) return;
     if (this.audio.paused) {
       this.muteSpotifyAudio(true);
       this.syncSpotifyVolume();
@@ -261,9 +281,16 @@ class SoundCloudPlayer {
       Spicetify.Player.addEventListener("onplaypause", () => {
         try {
           if (this._ignoreNextPlayPause) {
+            log("player", "onplaypause — ignored (our own echo)");
             this._ignoreNextPlayPause = false;
             return;
           }
+          log(
+            "player",
+            "onplaypause — SC active=%s, loading=%s",
+            !!this._track,
+            this._isLoading,
+          );
           if (this._track && !this._isLoading) {
             this.forceSpotifyPaused();
             this.toggleSc();
@@ -349,6 +376,11 @@ class SoundCloudPlayer {
       Spicetify.Player.addEventListener("songchange", () => {
         try {
           if (!this._track) return;
+          log(
+            "player",
+            "songchange — clearing SC track '%s'",
+            this._track.title,
+          );
           // Increment loadId to abort any in-flight loadTrack promise.
           // Without this, a resolveStreamUrl() still in-flight would continue
           // after this handler clears _track, set sc-active again, and restart
@@ -378,7 +410,7 @@ class SoundCloudPlayer {
   // ── Skip-button intercept ─────────────────────────────────────────────────
 
   private hookSkipButtons(): void {
-    const hookBtn = (sels: string[], handler: () => void) => {
+    const hookBtn = (sels: string[], handler: () => void): boolean => {
       for (const sel of sels) {
         const btn = document.querySelector<HTMLButtonElement>(sel);
         if (!btn || (btn as HTMLButtonElement & { _sc?: boolean })._sc)
@@ -394,16 +426,19 @@ class SoundCloudPlayer {
           },
           true,
         );
-        return;
+        return true;
       }
+      return false;
     };
     const tryHook = () => {
       // Intercept the main play/pause button so a click controls SC audio
       // directly and Spotify never toggles its own transport (which would
       // resume Spotify's audio and invert the button's visual state).
-      hookBtn(SEL_PLAYPAUSE, () => this.toggleSc());
-      hookBtn(SEL_SKIP_FWD, () => void this.next());
-      hookBtn(SEL_SKIP_BCK, () => void this.prev());
+      const pp = hookBtn(SEL_PLAYPAUSE, () => this.toggleSc());
+      const fwd = hookBtn(SEL_SKIP_FWD, () => void this.next());
+      const bck = hookBtn(SEL_SKIP_BCK, () => void this.prev());
+      if (pp || fwd || bck)
+        log("player", "transport buttons hooked (playpause/next/prev)");
     };
     this._tryHookSkipButtons = tryHook;
     tryHook();
@@ -482,6 +517,11 @@ class SoundCloudPlayer {
     }
     if (ov) return; // already in place
 
+    log(
+      "player",
+      "progress overlay %s",
+      this._progressOverlay ? "recreated (Spotify re-rendered)" : "created",
+    );
     ov = document.createElement("div");
     ov.id = "sc-progress";
     ov.innerHTML =
@@ -938,7 +978,7 @@ class SoundCloudPlayer {
     this.refreshSourceBadge();
     setTimeout(() => {
       this._tryHookSkipButtons?.();
-      this.hookProgressBar();
+      this._tryHookProgressBar?.();
     }, 150);
   }
 
@@ -974,23 +1014,66 @@ class SoundCloudPlayer {
 
   private async resolveStreamUrl(track: SCTrack): Promise<string> {
     const transcodings = track.media?.transcodings ?? [];
+    log(
+      "player",
+      "resolveStreamUrl — %d transcodings available",
+      transcodings.length,
+    );
     const progressive = transcodings.find(
       (t) => t.format?.protocol === "progressive",
     );
     if (progressive?.url) {
+      log("player", "trying progressive transcoding: %s", progressive.url);
       try {
         const url = await resolveTranscodingUrl(
           progressive.url,
           track.track_authorization,
         );
-        if (url) return url;
+        if (url) {
+          log("player", "progressive URL resolved: %s…", url.slice(0, 80));
+          return url;
+        }
       } catch (e) {
-        console.warn("[SpiceCloud] Progressive transcoding resolve failed:", e);
+        warn(
+          "player",
+          "progressive transcoding failed, falling back to /streams:",
+          e,
+        );
       }
+    } else {
+      log("player", "no progressive transcoding, using /streams endpoint");
     }
     const streams = await getTrackStreams(track.id);
-    const url = streams.http_mp3_128_url;
-    if (url) return url;
+    if (streams.http_mp3_128_url) {
+      log("player", "/streams URL: %s…", streams.http_mp3_128_url.slice(0, 80));
+      return streams.http_mp3_128_url;
+    }
+
+    // /streams returned no direct MP3 URL — try resolving an HLS transcoding.
+    // This covers tracks where only HLS is available (e.g. commercial releases).
+    const hls =
+      transcodings.find((t) => t.format?.protocol === "hls" && !t.snipped) ??
+      transcodings.find((t) => t.format?.protocol === "hls");
+    if (hls?.url) {
+      warn(
+        "player",
+        "/streams had no mp3 url, trying HLS transcoding: %s",
+        hls.url,
+      );
+      try {
+        const hlsUrl = await resolveTranscodingUrl(
+          hls.url,
+          track.track_authorization,
+        );
+        if (hlsUrl) {
+          log("player", "HLS fallback URL resolved: %s…", hlsUrl.slice(0, 80));
+          return hlsUrl;
+        }
+      } catch (e) {
+        warn("player", "HLS transcoding fallback failed:", e);
+      }
+    }
+
     throw new Error("No streamable URL available for this track");
   }
 
@@ -1036,6 +1119,7 @@ class SoundCloudPlayer {
       position: duration > 0 ? this.audio.currentTime / duration : 0,
       duration,
       volume: this.audio.volume,
+      isMuted: this.audio.muted,
       isLoading: this._isLoading,
       error: this._error,
     };
@@ -1050,6 +1134,13 @@ class SoundCloudPlayer {
 
   async loadTrack(track: SCTrack, autoPlay = true): Promise<void> {
     const loadId = ++this._loadId;
+    log(
+      "player",
+      "loadTrack → '%s' (id:%d, autoPlay:%s)",
+      track.title,
+      track.id,
+      autoPlay,
+    );
     this._track = track;
     this._isLoading = true;
     this._error = null;
@@ -1063,25 +1154,32 @@ class SoundCloudPlayer {
     // The _isLoading guard ensures the resulting onplaypause echo is ignored.
     try {
       if (Spicetify.Player.data?.item && Spicetify.Player.isPlaying()) {
+        this._ignoreNextPlayPause = true;
         Spicetify.Player.pause();
       }
     } catch {}
 
     try {
       const url = await this.resolveStreamUrl(track);
-      if (loadId !== this._loadId) return;
+      if (loadId !== this._loadId) {
+        log("player", "loadTrack stale (loadId mismatch), aborting");
+        return;
+      }
 
       this.audio.src = url;
       this.audio.load();
       // Read volume from Spotify's DOM slider — only reliable source.
       // Default 0.5 so first audio frame never blasts at 100%.
-      this.audio.volume = this.readSpotifyVolume() ?? 0.5;
+      const vol = this.readSpotifyVolume() ?? 0.5;
+      this.audio.volume = vol;
+      log("player", "audio src set, volume=%.2f", vol);
 
       if (autoPlay) {
         try {
           await this.audio.play();
+          log("player", "autoplay started");
         } catch (e) {
-          console.warn("[SpiceCloud] Autoplay blocked:", e);
+          warn("player", "autoplay blocked:", e);
         }
       }
 
@@ -1095,6 +1193,7 @@ class SoundCloudPlayer {
       } catch {}
     } catch (err) {
       if (loadId !== this._loadId) return;
+      logError("player", "loadTrack error:", err);
       this._error = err instanceof Error ? err.message : "Failed to load track";
     } finally {
       if (loadId === this._loadId) {
@@ -1105,6 +1204,12 @@ class SoundCloudPlayer {
   }
 
   setQueue(tracks: SCTrack[], startIndex = 0): void {
+    log(
+      "player",
+      "setQueue — %d tracks, startIndex=%d",
+      tracks.length,
+      startIndex,
+    );
     this.queue = tracks;
     this.queueIndex = startIndex;
   }
@@ -1134,7 +1239,15 @@ class SoundCloudPlayer {
   seek(ratio: number): void {
     const r = Math.max(0, Math.min(1, ratio));
     if (isFinite(this.audio.duration) && this.audio.duration > 0) {
-      this.audio.currentTime = this.audio.duration * r;
+      const t = this.audio.duration * r;
+      log(
+        "player",
+        "seek → %.1f%% (%.1fs / %.1fs)",
+        r * 100,
+        t,
+        this.audio.duration,
+      );
+      this.audio.currentTime = t;
     }
   }
 
@@ -1142,23 +1255,68 @@ class SoundCloudPlayer {
     this.audio.volume = Math.max(0, Math.min(1, vol));
   }
 
+  mute(muted: boolean): void {
+    this.audio.muted = muted;
+    this.emit();
+  }
+
+  // Sets SC audio volume AND moves Spotify's DOM volume slider so that
+  // syncSpotifyVolume() (which reads the slider every 250 ms) doesn't
+  // immediately override the value the user set via our React slider.
+  setSyncedVolume(vol: number): void {
+    const v = Math.max(0, Math.min(1, vol));
+    this.audio.volume = v;
+    try {
+      const inp = q<HTMLInputElement>(SEL_VOLUME);
+      if (inp && nativeRangeSet) {
+        const max = parseFloat(inp.max);
+        const raw = isFinite(max) && max > 1 ? String(v * max) : String(v);
+        nativeRangeSet.call(inp, raw);
+        inp.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    } catch {}
+  }
+
   async next(): Promise<void> {
     if (this.queueIndex < this.queue.length - 1) {
       this.queueIndex++;
+      log(
+        "player",
+        "next → queue[%d/%d] '%s'",
+        this.queueIndex,
+        this.queue.length - 1,
+        this.queue[this.queueIndex]?.title,
+      );
       await this.loadTrack(this.queue[this.queueIndex]);
+    } else {
+      log("player", "next — end of queue (%d tracks)", this.queue.length);
     }
   }
 
   async prev(): Promise<void> {
     if (this.audio.currentTime > 3 || this.queueIndex <= 0) {
+      log(
+        "player",
+        "prev — restarting current track (t=%.1fs, idx=%d)",
+        this.audio.currentTime,
+        this.queueIndex,
+      );
       this.audio.currentTime = 0;
       return;
     }
     this.queueIndex--;
+    log(
+      "player",
+      "prev → queue[%d/%d] '%s'",
+      this.queueIndex,
+      this.queue.length - 1,
+      this.queue[this.queueIndex]?.title,
+    );
     await this.loadTrack(this.queue[this.queueIndex]);
   }
 
   destroy(): void {
+    log("player", "destroy — cleaning up");
     this.stopTimer();
     if (this.badgeTimer !== null) {
       clearInterval(this.badgeTimer);

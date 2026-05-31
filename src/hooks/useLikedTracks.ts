@@ -9,7 +9,7 @@ import { getLikedTrackIds, likeTrack, unlikeTrack } from "../services/api";
 
 interface LikedTracksValue {
   likedIds: Set<number>;
-  toggleLike: (trackId: number) => Promise<void>;
+  toggleLike: (trackId: number) => Promise<boolean>;
 }
 
 const LikedTracksContext = createContext<LikedTracksValue | null>(null);
@@ -37,7 +37,7 @@ export function LikedTracksProvider({
   }, []);
 
   const toggleLike = useCallback(
-    async (trackId: number): Promise<void> => {
+    async (trackId: number): Promise<boolean> => {
       const wasLiked = likedIds.has(trackId);
       setLikedIds((prev) => {
         const next = new Set(prev);
@@ -51,6 +51,7 @@ export function LikedTracksProvider({
         } else {
           await likeTrack(trackId);
         }
+        return true;
       } catch (err) {
         console.warn("[SpiceCloud] toggleLike failed:", err);
         // Revert on error
@@ -60,6 +61,7 @@ export function LikedTracksProvider({
           else next.delete(trackId);
           return next;
         });
+        return false;
       }
     },
     [likedIds],

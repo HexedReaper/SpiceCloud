@@ -1,4 +1,5 @@
 import { SCSettings } from "../types/soundcloud";
+import { log, warn } from "./debug";
 
 const STORAGE_KEY = "spicecloud:settings";
 
@@ -43,12 +44,14 @@ async function fetchText(url: string): Promise<string> {
  * Returns null on failure (network/CORS/parse) — callers fall back gracefully.
  */
 export async function fetchClientId(): Promise<string | null> {
+  log("auth", "scraping SoundCloud bundles for client_id...");
   try {
     const html = await fetchText("https://soundcloud.com/");
     const scripts = Array.from(
       html.matchAll(/<script[^>]+src="([^"]+)"/g),
       (m) => m[1],
     ).filter((u) => u.startsWith("http"));
+    log("auth", "found %d script bundles to scan", scripts.length);
 
     // The client_id usually lives in one of the later bundles — scan from the
     // end and return the first match.
@@ -58,13 +61,22 @@ export async function fetchClientId(): Promise<string | null> {
         const m =
           js.match(/client_id:"([a-zA-Z0-9]{16,})"/) ??
           js.match(/client_id=([a-zA-Z0-9]{16,})/);
-        if (m && m[1]) return m[1];
+        if (m && m[1]) {
+          log(
+            "auth",
+            "client_id found: %s… (in %s)",
+            m[1].slice(0, 8),
+            url.split("/").pop(),
+          );
+          return m[1];
+        }
       } catch {
         // ignore a single bad bundle and keep scanning
       }
     }
+    warn("auth", "client_id not found in any of %d bundles", scripts.length);
   } catch (e) {
-    console.warn("[SpiceCloud] fetchClientId failed:", e);
+    warn("auth", "fetchClientId failed:", e);
   }
   return null;
 }

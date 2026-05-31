@@ -1,6 +1,7 @@
 import { searchTracks } from "./api";
 import { player } from "./player";
 import { SCTrack } from "../types/soundcloud";
+import { log, warn } from "./debug";
 
 // Exact selectors from Spotify's live DOM.
 const SEL_DROPDOWN = "#search-dropdown";
@@ -227,6 +228,12 @@ function interleaveRows(grid: Element): void {
   const spotifyRows = Array.from(
     grid.querySelectorAll(':scope > [role="row"][draggable="true"]'),
   );
+  log(
+    "search-dropdown",
+    "interleaving %d SC rows with %d Spotify rows",
+    _results.length,
+    spotifyRows.length,
+  );
   _results.forEach((track, i) => {
     const row = buildRow(track, i);
     const anchor = spotifyRows[i];
@@ -294,10 +301,13 @@ async function doSearch(query: string): Promise<void> {
     syncGrid();
     return;
   }
+  log("search-dropdown", "searching: '%s'", query.trim());
   try {
     const data = await searchTracks(query.trim(), 20);
     _results = data?.collection ?? [];
-  } catch {
+    log("search-dropdown", "got %d SC results", _results.length);
+  } catch (e) {
+    warn("search-dropdown", "search failed:", e);
     _results = [];
   }
   if (!_destroyed) syncGrid();
@@ -351,6 +361,7 @@ const _scWin = window as unknown as { __scSearchInited?: boolean };
 
 export function initSearchIntegration(): void {
   if (_bodyObs || _scWin.__scSearchInited) return;
+  log("search-dropdown", "init");
   _scWin.__scSearchInited = true;
   _destroyed = false;
   injectStyles();
@@ -365,6 +376,7 @@ export function initSearchIntegration(): void {
 
 export function destroySearchIntegration(): void {
   if (!_bodyObs && !_scWin.__scSearchInited) return;
+  log("search-dropdown", "destroy");
   _scWin.__scSearchInited = false;
   _destroyed = true;
   _bodyObs?.disconnect();

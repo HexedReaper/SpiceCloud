@@ -793,6 +793,263 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* ── Now Playing bar ─────────────────────────────────────────────────────────── */
+/*
+ * Two-row grid layout:
+ *   col 1 (52px): cover art, spans both rows
+ *   col 2 (flex): row 1 = track info + save btn, row 2 = transport + volume bar
+ */
+.sc-now-playing {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 6px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--background-base, var(--spice-player, #000));
+  min-width: 0;
+}
+
+/* Cover spans both rows */
+.sc-now-playing__cover-slot {
+  grid-row: 1 / 3;
+  grid-column: 1;
+  align-self: center;
+}
+
+.sc-now-playing__cover-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--encore-corner-radius-base, 4px);
+  overflow: hidden;
+  background: var(--background-elevated-base, #292929);
+}
+
+.sc-now-playing__cover {
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+  display: block;
+}
+
+/* Row 1: track info + save button */
+.sc-now-playing__top {
+  grid-row: 1;
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sc-now-playing__track-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sc-now-playing__title {
+  font-size: var(--encore-text-size-smaller, 0.875rem);
+  font-weight: 400;
+  color: var(--text-base, var(--spice-text, #fff));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  line-height: 1.35;
+}
+
+.sc-now-playing__artist {
+  font-size: var(--encore-text-size-smaller-2, 0.75rem);
+  color: var(--text-subdued, var(--spice-subtext, #b3b3b3));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  line-height: 1.35;
+}
+
+/*
+ * Save button — Spotify's condensed icon-only tertiary button style.
+ * Circle-plus when unsaved, accent circle-checkmark when saved.
+ */
+.sc-now-playing__like {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-subdued, var(--spice-subtext, #b3b3b3));
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition:
+    color 0.2s,
+    transform 0.1s;
+  line-height: 0;
+  flex-shrink: 0;
+}
+
+.sc-now-playing__like:hover {
+  color: var(--text-base, var(--spice-text, #fff));
+  transform: scale(var(--encore-button-hover-scale, 1.04));
+}
+
+.sc-now-playing__like--active {
+  color: var(--text-bright-accent, var(--spice-button-active, #1ed760));
+}
+
+.sc-now-playing__like--active:hover {
+  color: var(--text-bright-accent, var(--spice-button-active, #1ed760));
+  transform: scale(var(--encore-button-hover-scale, 1.04));
+}
+
+/* Row 2: transport + volume */
+.sc-now-playing__bottom {
+  grid-row: 2;
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sc-now-playing__transport {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.sc-now-playing__ctrl {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-subdued, var(--spice-subtext, #b3b3b3));
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition:
+    color 0.15s,
+    transform 0.1s;
+  line-height: 0;
+}
+
+.sc-now-playing__ctrl:hover {
+  color: var(--text-base, var(--spice-text, #fff));
+  transform: scale(var(--encore-button-hover-scale, 1.04));
+}
+
+.sc-now-playing__ctrl--play {
+  width: 32px;
+  height: 32px;
+  background: var(--text-base, var(--spice-text, #fff));
+  color: var(--background-base, var(--spice-main, #000));
+  transition:
+    background 0.15s,
+    transform 0.1s;
+}
+
+.sc-now-playing__ctrl--play:hover {
+  color: var(--background-base, var(--spice-main, #000));
+  background: var(--text-base, var(--spice-text, #fff));
+  transform: scale(var(--encore-button-hover-scale, 1.04));
+}
+
+/* Volume bar — mirrors Spotify's .main-nowPlayingBar-volumeBar */
+.sc-now-playing__volume {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sc-now-playing__mute {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-subdued, var(--spice-subtext, #b3b3b3));
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition:
+    color 0.15s,
+    transform 0.1s;
+  line-height: 0;
+}
+
+.sc-now-playing__mute:hover {
+  color: var(--text-base, var(--spice-text, #fff));
+  transform: scale(var(--encore-button-hover-scale, 1.04));
+}
+
+/* Volume slider track — styled <input type="range"> */
+.sc-now-playing__vol-track {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 12px; /* taller hit-target */
+  cursor: pointer;
+}
+
+.sc-now-playing__vol-input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  /* Fill via CSS gradient driven by --vol-pct custom property set inline */
+  background: linear-gradient(
+    to right,
+    var(--text-base, #fff) var(--vol-pct, 0%),
+    var(--background-tinted-base, rgba(255, 255, 255, 0.3)) var(--vol-pct, 0%)
+  );
+  transition: background 0.05s;
+}
+
+.sc-now-playing__vol-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-base, var(--spice-text, #fff));
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.sc-now-playing__volume:hover .sc-now-playing__vol-input::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+/* Green fill on hover — matches Spotify's playback bar hover colour */
+.sc-now-playing__volume:hover .sc-now-playing__vol-input {
+  background: linear-gradient(
+    to right,
+    #1ed760 var(--vol-pct, 0%),
+    var(--background-tinted-base, rgba(255, 255, 255, 0.3)) var(--vol-pct, 0%)
+  );
+}
+
 /* ── Debug panel ─────────────────────────────────────────────────────────────── */
 .sc-debug {
   position: fixed;

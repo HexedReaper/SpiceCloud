@@ -17,6 +17,8 @@ export function usePlayer() {
     toggle: () => player.toggle(),
     seek: (r: number) => player.seek(r),
     setVolume: (v: number) => player.setVolume(v),
+    setSyncedVolume: (v: number) => player.setSyncedVolume(v),
+    mute: (v: boolean) => player.mute(v),
     next: () => void player.next(),
     prev: () => void player.prev(),
     loadTrack: (track: SCTrack, autoPlay?: boolean) =>

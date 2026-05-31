@@ -10,7 +10,7 @@ import { SearchView } from "./components/SearchView";
 import { LikedTracksView } from "./components/LikedTracksView";
 import { PlaylistsView } from "./components/PlaylistsView";
 import { SettingsView } from "./components/SettingsView";
-
+import { NowPlayingBar } from "./components/NowPlayingBar";
 // NOTE: the player and SoundCloud search integration are booted at Spotify
 // startup by the extension (src/extensions/extension.tsx), not here.
 
@@ -69,6 +69,7 @@ export default function App() {
             <SettingsView onDisconnect={disconnect} />
           </div>
         </div>
+        <NowPlayingBar />
       </LikedTracksProvider>
     </div>
   );
