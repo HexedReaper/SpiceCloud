@@ -42,7 +42,8 @@ function boot(): void {
   if (
     typeof Spicetify === "undefined" ||
     !Spicetify.Player ||
-    !Spicetify.LocalStorage
+    !Spicetify.LocalStorage ||
+    !Spicetify.Platform
   ) {
     setTimeout(boot, 200);
     return;

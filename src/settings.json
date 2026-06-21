@@ -4,5 +4,5 @@
   "icon": "icon.svg",
   "active-icon": "active-icon.svg",
   "subfiles": [],
-  "subfiles_extension": []
+  "subfiles_extension": ["extensions/extension"]
 }
