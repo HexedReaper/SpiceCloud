@@ -30,7 +30,11 @@ async function fetchText(url: string): Promise<string> {
   if (typeof Spicetify === "undefined" || !Spicetify.CosmosAsync) {
     throw new Error("Spicetify.CosmosAsync unavailable");
   }
-  const raw = (await Spicetify.CosmosAsync.get(CORS_PROXY + url)) as unknown;
+  // Guard against double-proxying: the CORS proxy rewrites <script src> URLs in
+  // HTML responses, prepending its own origin. If an already-proxied URL is
+  // passed here, don't add the prefix again or we get a 522 loop.
+  const proxied = url.startsWith(CORS_PROXY) ? url : CORS_PROXY + url;
+  const raw = (await Spicetify.CosmosAsync.get(proxied)) as unknown;
   if (typeof raw === "string") return raw;
   if (raw && typeof raw === "object" && "body" in raw) {
     const body = (raw as { body: unknown }).body;

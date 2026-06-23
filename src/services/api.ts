@@ -139,6 +139,11 @@ async function scFetch<T>(
   extra: Record<string, string> = {},
   attempt = 0,
 ): Promise<T> {
+  // The extension and app are separate bundles, each with their own copy of
+  // _settings. Always reload from LocalStorage on the first attempt so both
+  // bundles share the same source of truth and pick up credential updates
+  // without requiring a full Spotify reload.
+  if (attempt === 0) _settings = loadSettings();
   const params: Record<string, string> = {
     client_id: _settings.clientId,
     ...SC_BASE_PARAMS,
@@ -420,6 +425,7 @@ async function scMutate(
   endpoint: string,
   attempt = 0,
 ): Promise<void> {
+  if (attempt === 0) _settings = loadSettings();
   const params: Record<string, string> = {
     client_id: _settings.clientId,
     ...SC_BASE_PARAMS,
