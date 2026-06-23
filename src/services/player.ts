@@ -1,3 +1,4 @@
+// player.ts
 import { SCTrack } from "../types/soundcloud";
 import { getTrackStreams, resolveTranscodingUrl } from "./api";
 import { log, warn, error as logError } from "./debug";
@@ -11,6 +12,8 @@ export interface PlayerState {
   isMuted: boolean;
   isLoading: boolean;
   error: string | null;
+  scVolMultEnabled: boolean;
+  scVolumeLevel: number;
 }
 
 type Listener = (state: PlayerState) => void;
@@ -43,11 +46,7 @@ const SEL_DUR_TEXT = [
   '[data-testid="playback-duration"]',
   ".playback-progressbar__time-total",
 ];
-const SEL_PROGRESS = [
-  '[data-testid="playback-progressbar"] input[type="range"]',
-  '.playback-progressbar input[type="range"]',
-  'input[aria-label*="progress" i]',
-];
+//delete SEL_PROGRESS array as it is no longer used
 const SEL_VOLUME = [
   '[data-testid="volume-bar"] input[type="range"]',
   'input[aria-label*="volume" i]',
@@ -84,10 +83,7 @@ function fmtTime(s: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-const nativeRangeSet = Object.getOwnPropertyDescriptor(
-  HTMLInputElement.prototype,
-  "value",
-)?.set;
+//Delete the nativeRangeSet, as it is no longer used.
 
 // Pause-icon SVG as data-URL for CSS mask (matches Spotify's icon style).
 const PAUSE_ICON_URL =
@@ -109,6 +105,7 @@ class SoundCloudPlayer {
   private _sourceBadge: HTMLElement | null = null;
   private _tryHookSkipButtons: (() => void) | null = null;
   private _tryHookProgressBar: (() => void) | null = null;
+  private _tryHookVolumeInput: (() => void) | null = null;
   // Seek guard — when user is dragging the progress bar we must not overwrite
   // the range input's value or the thumb snaps back every 250 ms.
   private _isSeeking = false;
@@ -138,6 +135,14 @@ class SoundCloudPlayer {
   private _progressFill: HTMLElement | null = null;
   private _progressThumb: HTMLElement | null = null;
 
+  //Allow SC tracks to be quieter than Spotify's master volume
+  //Added other properties for Spotify slider to visually switch to the SC volume when SC plays, 
+  //and restore Spotify volume when SC stops
+  private _scVolMultEnabled: boolean = true;
+  private _scVolumeLevel: number = 0.5;
+  private _savedSpotifyVolume: number | null = null;
+  private _isUpdatingSpotifyRange: boolean = false;
+
   constructor() {
     this.audio = document.createElement("audio");
     this.audio.id = "spicecloud-audio";
@@ -158,6 +163,15 @@ class SoundCloudPlayer {
       return;
     }
     log("player", "Spicetify ready, hooking transport");
+    // load saved SC volume settings from LocalStorage
+    try {
+      this._scVolMultEnabled = Spicetify.LocalStorage.get("spicecloud_sc_vol_enabled") !== "false";
+      const savedVol = Spicetify.LocalStorage.get("spicecloud_sc_vol_level");
+      if (savedVol !== null) {
+        this._scVolumeLevel = Math.max(0, Math.min(1, parseFloat(savedVol)));
+      }
+      log("player", "Loaded SC volume settings: enabled=%s, level=%.2f", this._scVolMultEnabled, this._scVolumeLevel);
+    } catch {}
     this.hookSpotifyPlayer();
     this.hookSkipButtons();
     this.hookProgressBar();
@@ -233,7 +247,8 @@ class SoundCloudPlayer {
       document.querySelectorAll<HTMLAudioElement>("audio").forEach((el) => {
         if (el !== this.audio) {
           el.muted = muted;
-          if (muted) el.volume = 0;
+          //restore volume to 1 when unmuting so Spotify isn't stuck silent
+          el.volume = muted ? 0 : 1;
         }
       });
     } catch {}
@@ -257,7 +272,6 @@ class SoundCloudPlayer {
     if (!this._track || this._error) return;
     if (this.audio.paused) {
       this.muteSpotifyAudio(true);
-      this.syncSpotifyVolume();
       void this.audio.play().catch(() => {});
     } else {
       this.audio.pause();
@@ -301,76 +315,30 @@ class SoundCloudPlayer {
         this.refreshSourceBadge();
       });
 
-      // ── Volume sync ───────────────────────────────────────────────────────
-      for (const n of ["onvolumechange", "volumechange"]) {
-        try {
-          Spicetify.Player.addEventListener(n, () => {
-            if (!this._track) return;
-            this.syncSpotifyVolume();
-          });
-        } catch {}
-      }
+      //removed onvolumechange...
 
       // Direct input listener on the volume slider — fires on every drag step
       // so SC audio tracks the slider in real-time without waiting for the
       // 250ms timer or a Spicetify event.
       const hookVolumeInput = () => {
-        const inp = q<HTMLInputElement>(SEL_VOLUME);
-        if (!inp || (inp as HTMLInputElement & { _scVol?: boolean })._scVol)
-          return;
-        (inp as HTMLInputElement & { _scVol?: boolean })._scVol = true;
-        inp.addEventListener("input", () => {
-          if (this._track) this.syncSpotifyVolume();
-        });
         // Mirror the mute button so clicking mute also silences SC audio.
-        const muteBtn = document.querySelector<HTMLButtonElement>(
-          '[data-testid="volume-bar-toggle-mute-button"]',
-        );
-        if (
-          muteBtn &&
-          !(muteBtn as HTMLButtonElement & { _scMute?: boolean })._scMute
-        ) {
+        const muteBtn = document.querySelector<HTMLButtonElement>('[data-testid="volume-bar-toggle-mute-button"]');
+        if (muteBtn && !(muteBtn as HTMLButtonElement & { _scMute?: boolean })._scMute) {
           (muteBtn as HTMLButtonElement & { _scMute?: boolean })._scMute = true;
           muteBtn.addEventListener("click", () => {
             if (!this._track) return;
-            setTimeout(() => {
-              this.audio.muted = !this.audio.muted;
-            }, 50);
+            setTimeout(() => { this.audio.muted = !this.audio.muted; }, 50);
           });
         }
       };
+      this._tryHookVolumeInput = hookVolumeInput;
       hookVolumeInput();
       [500, 1500, 4000].forEach((ms) => setTimeout(hookVolumeInput, ms));
 
-      // ── Next / Previous ───────────────────────────────────────────────────
-      const doNext = () => {
-        if (this._track) void this.next();
-      };
-      const doPrev = () => {
-        if (this._track) void this.prev();
-      };
-      for (const n of ["forward", "next", "skipNext"]) {
-        try {
-          Spicetify.Player.addEventListener(n, doNext);
-        } catch {}
-      }
-      for (const n of ["backward", "prev", "skipPrev"]) {
-        try {
-          Spicetify.Player.addEventListener(n, doPrev);
-        } catch {}
-      }
-
-      // ── Seek ──────────────────────────────────────────────────────────────
-      for (const n of ["onseek", "seek"]) {
-        try {
-          Spicetify.Player.addEventListener(n, () => {
-            if (!this._track) return;
-            const pos = Spicetify.Player.data?.position;
-            if (typeof pos === "number" && pos >= 0)
-              this.audio.currentTime = pos / 1000;
-          });
-        } catch {}
-      }
+      //Why: Spotify sometimes emits skipNext or forward events while the SC track is playing. 
+      // This triggers doNext, which immediately calls next(), stopping the track prematurely. 
+      // Already intersept physical skip buttons via hookSkipButtons, so 
+      // these event listeners are redundant and cause race conditions.
 
       // ── Song change — Spotify navigated away ──────────────────────────────
       Spicetify.Player.addEventListener("songchange", () => {
@@ -387,12 +355,21 @@ class SoundCloudPlayer {
           // SC audio on top of Spotify — causing the hard crash.
           this._loadId++;
           this.audio.pause();
+
+          //FIX: Clear track reference BEFORE triggering setSyncedVolume input events
           this._track = null;
           this._error = null;
           this.stopTimer();
           this.muteSpotifyAudio(false);
           this.updateSourceBadge(null);
           document.body.classList.remove("sc-active", "sc-playing");
+
+          // Restore Spotify's volume profile visually
+          if (this._scVolMultEnabled && this._savedSpotifyVolume !== null) {
+            this.setSyncedVolume(this._savedSpotifyVolume);
+            this._savedSpotifyVolume = null;
+          }
+
           this._cachedTitleEl = null;
           this._cachedArtistEl = null;
           this._cachedCoverEl = null;
@@ -419,7 +396,28 @@ class SoundCloudPlayer {
         btn.addEventListener(
           "click",
           (e) => {
-            if (!this._track) return;
+            if (!this._track) return; //SC not active, let Spotify handle it
+
+            // If we are at the end of the SC queue and user clicks Next
+            if (sels === SEL_SKIP_FWD && this.queueIndex >= this.queue.length - 1) {
+              this._track = null;
+              this.audio.pause();
+              this.stopTimer();
+              this.muteSpotifyAudio(false);
+              document.body.classList.remove("sc-active", "sc-playing");
+              return; //Let Spotify handle the skip natively
+            }
+
+            // If we are at the first SC track and user clicks Previous (and track just started)
+            if (sels === SEL_SKIP_BCK && this.queueIndex <= 0 && this.audio.currentTime <= 3) {
+              this._track = null;
+              this.audio.pause();
+              this.stopTimer();
+              this.muteSpotifyAudio(false);
+              document.body.classList.remove("sc-active", "sc-playing");
+              return; //Let Spotify handle the previous natively
+            }
+
             e.stopImmediatePropagation();
             e.preventDefault();
             handler();
@@ -609,6 +607,13 @@ class SoundCloudPlayer {
       body.sc-active .main-nowPlayingWidget-actionButtonWrapper,
       body.sc-active .main-trackList-enhanced { display: none !important; }
 
+
+      /* QOL: Ensure SC progress overlay never blocks Spotify UI when SC is inactive */
+      body:not(.sc-active) #sc-progress {
+        display: none !important;
+        pointer-events: none !important;
+      }
+
       /*
        * Source badge — fixed so it always appears above Spotify's player bar
        * regardless of which DOM element we manage to anchor into.
@@ -779,6 +784,9 @@ class SoundCloudPlayer {
         align-items: center;
         cursor: pointer;
         z-index: 10;
+        /* Expand hitbox vertically to make dragging easier without changing visual height */
+        padding: 12px 0;
+        margin: -12px 0;
       }
       #sc-progress .sc-progress__track {
         position: relative;
@@ -786,6 +794,9 @@ class SoundCloudPlayer {
         height: 4px;
         border-radius: 2px;
         background: var(--background-tinted-base, rgba(255,255,255,0.3));
+        /* Fix: Ensure track stays visually centered in the expanded hitbox */
+        margin-top: auto;
+        margin-bottom: auto;
       }
       #sc-progress .sc-progress__fill {
         position: absolute;
@@ -849,11 +860,23 @@ class SoundCloudPlayer {
     }
   }
 
-  private syncSpotifyVolume(): void {
-    const vol = this.readSpotifyVolume();
-    if (vol !== null && Math.abs(this.audio.volume - vol) > 0.005) {
-      this.audio.volume = vol;
-    }
+  private _lastCheckedVolume: number = -1;
+  private checkVolumeChanges(): void {
+    if (this._isUpdatingSpotifyRange) return;
+    try {
+      const vol = Spicetify.Player.getVolume();
+      // If the volume changed since we last checked
+      if (Math.abs(vol - this._lastCheckedVolume) > 0.001) {
+        this._lastCheckedVolume = vol;
+        if (this._track) {
+          this.audio.volume = vol;
+          if (this._scVolMultEnabled) {
+            this._scVolumeLevel = vol;
+            try { Spicetify.LocalStorage.set("spicecloud_sc_vol_level", String(vol)); } catch {}
+          }
+        }
+      }
+    } catch {}
   }
 
   // ── Source badge ─────────────────────────────────────────────────────────
@@ -948,26 +971,14 @@ class SoundCloudPlayer {
     // thumb snaps back to SC's current position every 250 ms.
     if (this._isSeeking) return;
 
-    // Paint our own overlay bar (Spotify's underlying bar is hidden via CSS),
-    // so the fill exactly matches the SC track's position and length.
+    //paint our own overlay bar (Spotify's underlying bar is hidden via CSS),
+    //so the fill exactly matches the SC track's position and length.
     this.updateProgressOverlay(fraction);
 
-    // Keep the range input in sync too, for the accessibility value text.
-    try {
-      if (!this._cachedRangeEl || !document.contains(this._cachedRangeEl))
-        this._cachedRangeEl = q<HTMLInputElement>(SEL_PROGRESS);
-      const inp = this._cachedRangeEl;
-      if (inp && nativeRangeSet) {
-        const max = parseFloat(inp.max);
-        const val =
-          isFinite(max) && max > 1000
-            ? String(Math.round(cur * 1000))
-            : isFinite(max) && max > 1
-              ? String(fraction * max)
-              : String(fraction);
-        if (inp.value !== val) nativeRangeSet.call(inp, val);
-      }
-    } catch {}
+    // Fix: Do NOT update Spotify's range input value. It causes an asynchronous
+    // feedback loop where Spotify thinks the user seeked, firing an onseek event
+    // after our guard flag resets, and forces SC audio to jump to that position.
+    // Our overlay (#sc-progress) handles the visual entirely.
   }
 
   // ── Now-playing metadata ──────────────────────────────────────────────────
@@ -1084,10 +1095,11 @@ class SoundCloudPlayer {
     this.progressTimer = setInterval(() => {
       this._tryHookProgressBar?.(); // re-hook if Spotify re-rendered the element
       this._tryHookSkipButtons?.(); // re-hook transport buttons too
+      this._tryHookVolumeInput?.(); // re-hook volume slider if re-rendered
       this.applyTrackInfo(); // re-assert title/artist/cover across re-renders
       this.syncSpotifyProgress();
-      this.syncSpotifyVolume();
       this.forceSpotifyPaused(); // keep Spotify silent AND paused
+      this.checkVolumeChanges();
       this.emit();
     }, 250);
   }
@@ -1122,6 +1134,9 @@ class SoundCloudPlayer {
       isMuted: this.audio.muted,
       isLoading: this._isLoading,
       error: this._error,
+      // Expose these so React components can view the settings live
+      scVolMultEnabled: this._scVolMultEnabled,
+      scVolumeLevel: this._scVolumeLevel,
     };
   }
 
@@ -1168,11 +1183,17 @@ class SoundCloudPlayer {
 
       this.audio.src = url;
       this.audio.load();
-      // Read volume from Spotify's DOM slider — only reliable source.
-      // Default 0.5 so first audio frame never blasts at 100%.
-      const vol = this.readSpotifyVolume() ?? 0.5;
-      this.audio.volume = vol;
-      log("player", "audio src set, volume=%.2f", vol);
+      // Fix: Save Spotify's volume and visually switch slider to SC volume profile
+      if (this._scVolMultEnabled) {
+        try { this._savedSpotifyVolume = Spicetify.Player.getVolume(); } catch { this._savedSpotifyVolume = 0.5; }
+        log("player", "loadTrack — separate profiles enabled. savedSpotifyVolume=%.2f, applying scVolumeLevel=%.2f", this._savedSpotifyVolume, this._scVolumeLevel);
+        this.setSyncedVolume(this._scVolumeLevel);
+        this._lastCheckedVolume = this._scVolumeLevel;
+      } else {
+        try { this.audio.volume = Spicetify.Player.getVolume(); } catch { this.audio.volume = 0.5; }
+        log("player", "loadTrack — shared volume. setting audio.volume to %.2f", this.audio.volume);
+      }
+      log("player", "audio src set, volume=%.2f", this.audio.volume);
 
       if (autoPlay) {
         try {
@@ -1251,6 +1272,28 @@ class SoundCloudPlayer {
     }
   }
 
+  setScVolumeLevel(vol: number): void {
+    this._scVolumeLevel = Math.max(0, Math.min(1, vol));
+    if (this._track && this._scVolMultEnabled) {
+      this.setSyncedVolume(this._scVolumeLevel);
+    }
+    this.emit();
+  }
+
+  setScVolumeEnabled(enabled: boolean): void {
+    this._scVolMultEnabled = enabled;
+    if (this._track) {
+      if (enabled) {
+        try { this._savedSpotifyVolume = Spicetify.Player.getVolume(); } catch { this._savedSpotifyVolume = 0.5; }
+        this.setSyncedVolume(this._scVolumeLevel);
+      } else if (this._savedSpotifyVolume !== null) {
+        this.setSyncedVolume(this._savedSpotifyVolume);
+        this._savedSpotifyVolume = null;
+      }
+    }
+    this.emit();
+  }
+
   setVolume(vol: number): void {
     this.audio.volume = Math.max(0, Math.min(1, vol));
   }
@@ -1265,16 +1308,21 @@ class SoundCloudPlayer {
   // immediately override the value the user set via our React slider.
   setSyncedVolume(vol: number): void {
     const v = Math.max(0, Math.min(1, vol));
+    log("player", "setSyncedVolume → v=%.2f", v);
     this.audio.volume = v;
+    this._isUpdatingSpotifyRange = true;
     try {
-      const inp = q<HTMLInputElement>(SEL_VOLUME);
-      if (inp && nativeRangeSet) {
-        const max = parseFloat(inp.max);
-        const raw = isFinite(max) && max > 1 ? String(v * max) : String(v);
-        nativeRangeSet.call(inp, raw);
-        inp.dispatchEvent(new Event("input", { bubbles: true }));
+      if (typeof Spicetify !== "undefined" && Spicetify.Player) {
+        Spicetify.Player.setVolume(v);
       }
-    } catch {}
+    } catch (e) {
+      logError("player", "Spicetify.Player.setVolume failed:", e);
+    }
+    setTimeout(() => { 
+      this._isUpdatingSpotifyRange = false;
+      this._lastCheckedVolume = v;
+      log("player", "setSyncedVolume guard released");
+    }, 200);
   }
 
   async next(): Promise<void> {
@@ -1290,6 +1338,40 @@ class SoundCloudPlayer {
       await this.loadTrack(this.queue[this.queueIndex]);
     } else {
       log("player", "next — end of queue (%d tracks)", this.queue.length);
+      this._loadId++;
+      this.audio.pause();
+      // removeAttribute instead of empty string to prevent MEDIA_ELEMENT_ERROR
+      this.audio.removeAttribute("src");
+
+      //Clear track reference BEFORE triggering setSyncedVolume input events
+      this._track = null;
+      this._error = null;
+      this.stopTimer();
+      this.muteSpotifyAudio(false);
+      this.updateSourceBadge(null);
+      document.body.classList.remove("sc-active", "sc-playing");
+
+      // Restore Spotify's volume profile visually
+      if (this._scVolMultEnabled && this._savedSpotifyVolume !== null) {
+        this.setSyncedVolume(this._savedSpotifyVolume);
+        this._savedSpotifyVolume = null;
+      }
+
+      this._cachedTitleEl = null;
+      this._cachedArtistEl = null;
+      this._cachedCoverEl = null;
+      this._cachedPosEl = null;
+      this._cachedDurEl = null;
+      this._cachedRangeEl = null;
+      
+      //Tell Spotify to resume playback of its own queue!
+      try {
+        if (Spicetify.Player.data?.item) {
+          Spicetify.Player.play();
+        }
+      } catch {}
+
+      this.emit();
     }
   }
 
@@ -1322,8 +1404,16 @@ class SoundCloudPlayer {
       clearInterval(this.badgeTimer);
       this.badgeTimer = null;
     }
+    // Restore Spotify's volume profile visually
+    if (this._scVolMultEnabled && this._savedSpotifyVolume !== null) {
+      this.setSyncedVolume(this._savedSpotifyVolume);
+      this._savedSpotifyVolume = null;
+    }
     this.audio.pause();
-    this.audio.src = "";
+    // Fix: removeAttribute instead of empty string to prevent MEDIA_ELEMENT_ERROR
+    this.audio.removeAttribute("src");
+    //Calling load() here is fine cause we remove element immediately after
+    this.audio.load();
     this.audio.remove();
     this.muteSpotifyAudio(false);
     this._sourceBadge?.remove();

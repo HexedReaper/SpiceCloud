@@ -1,17 +1,36 @@
 import React, { useState } from "react";
 import { loadSettings, saveSettings, fetchClientId } from "../services/auth";
 import { updateApiSettings } from "../services/api";
+import { player } from "../services/player";
+import { usePlayer } from "../hooks/usePlayer";
 
 interface Props {
   onDisconnect: () => void;
 }
 
 export function SettingsView({ onDisconnect }: Props) {
+  // Pull live state from the player so the UI is always in sync with the Spotify volume bar
+  const { scVolMultEnabled, scVolumeLevel } = usePlayer();
+
   const [settings, setSettings] = useState(loadSettings);
   const [showToken, setShowToken] = useState(false);
   const [saved, setSaved] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
+
+  const handleToggleVolMult = (enabled: boolean) => {
+    try {
+      Spicetify.LocalStorage.set("spicecloud_sc_vol_enabled", String(enabled));
+    } catch {}
+    player.setScVolumeEnabled(enabled);
+  };
+
+  const handleVolChange = (val: number) => {
+    try {
+      Spicetify.LocalStorage.set("spicecloud_sc_vol_level", String(val));
+    } catch {}
+    player.setScVolumeLevel(val);
+  };
 
   const save = () => {
     const clean = {
@@ -118,6 +137,48 @@ export function SettingsView({ onDisconnect }: Props) {
         <button className="sc-btn-primary" type="button" onClick={save}>
           {saved ? "✓ Saved" : "Save Changes"}
         </button>
+      </section>
+
+      <div className="sc-settings__divider" />
+      
+      <section className="sc-settings__section">
+        <h3 className="sc-settings__section-title">Playback</h3>
+        
+        <div className="sc-settings__field">
+          <span className="sc-label">Separate Volume Profiles</span>
+          <p className="sc-settings__hint">
+            Enable to give SoundCloud tracks their own volume level. The Spotify volume slider will visually switch between profiles. Disable to share the same volume level.
+          </p>
+          <label className="sc-toggle-row" style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={scVolMultEnabled}
+              onChange={(e) => handleToggleVolMult(e.target.checked)}
+            />
+            <span>{scVolMultEnabled ? "Enabled" : "Disabled"}</span>
+          </label>
+        </div>
+
+        {scVolMultEnabled && (
+          <div className="sc-settings__field">
+            <span className="sc-label">SoundCloud Volume Level</span>
+            <div className="sc-settings__input-row" style={{ alignItems: "center" }}>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                className="sc-input"
+                value={scVolumeLevel}
+                onChange={(e) => handleVolChange(parseFloat(e.target.value))}
+                style={{ width: "100%", cursor: "pointer" }}
+              />
+              <span style={{ marginLeft: "12px", minWidth: "40px", textAlign: "right", fontWeight: "bold" }}>
+                {Math.round(scVolumeLevel * 100)}%
+              </span>
+            </div>
+          </div>
+        )}
       </section>
 
       <div className="sc-settings__divider" />

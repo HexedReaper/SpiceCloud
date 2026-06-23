@@ -3,7 +3,7 @@ import { SCTrack } from "../types/soundcloud";
 import { player, PlayerState } from "../services/player";
 
 export function usePlayer() {
-  const [state, setState] = useState<PlayerState>(() => player.getState());
+  const [state, setState] = useState(() => player.getState());
 
   useEffect(() => {
     const unsub = player.subscribe(setState);
@@ -18,6 +18,7 @@ export function usePlayer() {
     seek: (r: number) => player.seek(r),
     setVolume: (v: number) => player.setVolume(v),
     setSyncedVolume: (v: number) => player.setSyncedVolume(v),
+    setScVolumeLevel: (m: number) => player.setScVolumeLevel(m),
     mute: (v: boolean) => player.mute(v),
     next: () => void player.next(),
     prev: () => void player.prev(),
